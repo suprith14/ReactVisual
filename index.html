@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>React Engine Lab</title>
+  <link rel="stylesheet" href="css/fonts.css">
+  <link rel="stylesheet" href="vendor/codemirror/codemirror.min.css">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <meta name="theme-color" content="#0d1117">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">⚛</span>
+      <div>
+        <h1>React Engine Lab</h1>
+        <p>See how JavaScript and React work inside, step by step</p>
+      </div>
+    </div>
+    <div class="xp-chip hidden" id="xpChip" title="Your progress" hidden></div>
+    <div class="top-actions">
+      <div class="iv-wrap">
+        <button id="btnInterview" class="btn" aria-haspopup="true" aria-expanded="false" aria-controls="ivMenu" title="Common JavaScript interview questions">🎤 Interview <span id="ivDue" class="iv-due hidden"></span><span class="caret">▾</span></button>
+        <div id="ivMenu" class="iv-menu hidden" role="menu" aria-label="Interview questions">
+          <div class="iv-head">
+            <div class="iv-row">
+              <input id="ivSearch" type="search" placeholder="Search… (closures, debounce, BFS)" aria-label="Search interview questions" autocomplete="off">
+              <select id="ivCat" aria-label="Topic"></select>
+            </div>
+            <div class="iv-tools">
+              <div id="ivLevels" class="iv-levels" role="group" aria-label="Difficulty">
+                <button class="on" data-lv="All">All</button><button data-lv="Easy">Easy</button><button data-lv="Medium">Medium</button><button data-lv="Hard">Hard</button>
+              </div>
+              <span class="iv-tbtns"><button id="ivMock" class="iv-random" title="5 random questions, 15 minutes, scored">⏱ Mock interview</button><button id="ivMockReact" class="iv-random" title="6 random React questions, 20 minutes, scored">⚛️ React mock</button><button id="ivRandom" class="iv-random" title="Open a question you have not solved yet">🎲 Random</button></span>
+            </div>
+            <div id="ivCount" class="iv-count"></div>
+          </div>
+          <div id="ivList" class="iv-list"></div>
+        </div>
+      </div>
+      <button id="btnInstall" class="btn hidden" title="Install as an app that works offline">📲 Install</button>
+      <button id="btnLevels" class="btn">Lessons</button>
+      <button id="btnRoadmap" class="btn" title="Roadmap, cheat sheet and interview checklist">⚛️ React path</button>
+      <button id="btnChallenges" class="btn">Challenges</button>
+      <button id="btnProgress" class="btn">Progress</button>
+      <button id="btnHelp" class="btn">Reference</button>
+      <button id="btnTheme" class="btn icon" title="Light / dark theme" aria-label="Toggle light or dark theme">☀</button>
+      <button id="btnSound" class="btn icon" title="Sound effects" aria-label="Toggle sound effects">🔇</button>
+    </div>
+  </header>
+
+  <div id="mockBar" class="mock-bar hidden" role="status" aria-live="polite"></div>
+  <section class="phasebar">
+    <div id="phaseBanner" class="phase phase-creation"><span class="phase-icon"></span><span class="phase-text">READY</span></div>
+    <div class="level-info"><span id="levelEmoji" class="hidden"></span><b id="levelTitle">Lesson</b> <span id="levelGoal"></span></div>
+    <div class="view-wrap hidden" aria-hidden="true">
+      <button id="btnView" class="btn small" aria-haspopup="true" aria-expanded="false" aria-controls="viewMenu" title="Choose what the visualizer shows">👁 View: <b id="viewName">Standard</b> <span class="caret">▾</span></button>
+      <div id="viewMenu" class="view-menu hidden" role="menu" aria-label="View options">
+        <div class="view-sec">Presets</div>
+        <div id="viewPresets" class="view-presets" role="group" aria-label="Presets"></div>
+        <div class="view-sec">Show</div>
+        <div id="viewOpts" class="view-opts"></div>
+        <div class="view-foot">Single keys toggle each option. Press <kbd>?</kbd> for every shortcut.</div>
+      </div>
+    </div>
+    <button id="btnLesson" class="btn small">Lesson &amp; quiz</button>
+    <button id="btnPair" class="btn small hidden" title="Run this concept and a version with one change side by side">⚖️ Compare</button>
+    <div id="panelStrip" class="panel-strip hidden" role="group" aria-label="Which panel is shown"></div>
+    <div class="clock" id="clock" title="Virtual time used by timers">0ms</div>
+    <div class="stepcount" id="stepCount">Step 0 / 0</div>
+  </section>
+
+  <main class="arena">
+    <div class="col col-code">
+      <section class="panel code-panel">
+        <div class="panel-head">
+          <h2>Code</h2>
+          <span class="hint">click a line to explain it · click a line number for a breakpoint</span>
+          <div class="tabs">
+            <button id="btnShare" class="tab" title="Copy a link that contains this code">Share</button>
+            <button id="tabEdit" class="tab">Edit</button>
+            <button id="tabRun" class="tab primary">Run ▶</button>
+          </div>
+        </div>
+        <div class="taskbar" id="taskBar">
+          <div class="task-text" id="taskText"></div>
+          <div class="task-actions">
+            <button id="btnCheck" class="btn primary">Check solution</button>
+            <button id="btnHint" class="btn">Hint</button>
+            <button id="btnSolution" class="btn">Show solution</button>
+            <button id="btnReset" class="btn">Reset</button>
+          </div>
+          <div id="taskHints"></div>
+          <div id="taskResults" class="task-results"></div>
+        </div>
+        <div class="code-wrap">
+          <textarea id="editor" aria-label="Code editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          <div id="codeView" class="code-view" title="Double-click to edit"></div>
+        </div>
+        <div id="ext" class="ext hidden"></div>
+        <div id="explain" class="explain hidden"></div>
+        <div id="evalbox" class="evalbox hidden" aria-live="polite"></div>
+      </section>
+      <section class="panel console-panel">
+        <div class="panel-head"><h2>Console</h2><span class="hint">what your program prints</span><span class="page-title">Page</span></div>
+        <div class="console-split">
+          <div id="console" class="console"></div>
+          <div id="page" class="page-view"></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel stack-panel">
+      <div class="panel-head"><h2>Call Stack</h2><span class="hint">last in, first out</span></div>
+      <div id="stack" class="stack"></div>
+    </section>
+
+    <div class="col col-side">
+      <section class="panel react-panel hidden" id="reactPanel" aria-label="React internals">
+        <div class="panel-head">
+          <h2>⚛️ React</h2>
+
+          <div class="tabs" role="tablist">
+            <button class="tab" data-rtab="inside" role="tab" title="What React is doing right now, as a diagram">Inside</button>
+            <button class="tab" data-rtab="fibers" role="tab">Fibers</button>
+            <button class="tab" data-rtab="hooks" role="tab">Hooks</button>
+            <button class="tab" data-rtab="log" role="tab">Log</button>
+          </div>
+        </div>
+        <div id="rlStages" class="rl-stages" aria-live="polite" title="React's work loop: an update triggers a render, the render is committed to the DOM, then effects run"></div>
+        <div id="reactBody" class="react-body"></div>
+      </section>
+      <section class="panel heap-panel">
+        <div class="panel-head"><h2>Heap</h2><span class="hint">objects, arrays, functions</span></div>
+        <div id="heap" class="heap"></div>
+      </section>
+      <section class="panel async-panel">
+        <div class="panel-head"><h2 id="webTitle">Web APIs</h2><span class="hint">timers · network · events</span></div>
+        <div id="webapis" class="webapis"></div>
+        <div class="loop-row">
+          <div class="event-loop" id="eventLoop" title="Event Loop"><span>↻</span><small>event loop</small></div>
+          <div class="queue-wrap">
+            <h3 id="qMicroTitle">Microtask queue <small>promises · always first</small></h3>
+            <div id="microQueue" class="queue micro"></div>
+            <h3 id="qTaskTitle">Callback queue <small>timers, events · after microtasks</small></h3>
+            <div id="queue" class="queue"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="narrator">
+    <canvas id="timeline" class="timeline" aria-label="Timeline of every step: click to jump"></canvas>
+    <div class="mascot" id="mascot"></div>
+    <div class="bubble" id="bubble">
+      <div class="bubble-kind" id="kindTag">READY</div>
+      <div id="narration" aria-live="polite">Choose a lesson and press ▶ to watch the engine work.</div>
+    </div>
+    <div class="controls">
+      <div class="buttons">
+        <button id="btnFirst" title="Restart (Home)" aria-label="Restart">⏮</button>
+        <button id="btnBack" title="Step back (←)" aria-label="Step back">◀</button>
+        <button id="btnPlay" class="play" title="Play / Pause (Space)" aria-label="Play or pause">▶</button>
+        <button id="btnNext" title="Step forward (→)" aria-label="Step forward">⏵</button>
+        <button id="btnLast" title="Jump to the end (End)" aria-label="Jump to the end">⏭</button>
+      </div>
+      <div class="buttons small">
+        <button id="btnOver" title="Step over: skip the inside of a function call (↓)">Step over</button>
+        <button id="btnOut" title="Step out: finish the current function (↑)">Step out</button>
+        <button id="btnBp" title="Run to the next breakpoint (B)">Next breakpoint</button>
+        <button id="btnReactStop" title="While playing, pause where React starts a render, a commit or its effects. Click to change.">⏸ Stop at React: off</button>
+      </div>
+      <div class="buttons small tools">
+        <button id="btnCompare" title="Run two versions of the code side by side">Compare</button>
+        <button id="btnLab" title="Big-O lab: measure how the step count grows with the input size">📈 Big-O</button>
+        <button id="btnRecord" title="Record a video of the run (your browser asks which tab to share)">⏺ Record</button>
+        <button id="btnSteps" title="Download every step as a Markdown file">⬇ Steps</button>
+        <button id="btnKeys" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">?</button>
+      </div>
+      <input type="range" id="scrub" min="0" max="0" value="0" aria-label="Timeline">
+      <label class="speed" title="Playback speed">slow<input type="range" id="speed" min="0" max="4" step="1" value="2" aria-label="Speed">fast</label>
+    </div>
+  </footer>
+
+  <div id="tour" class="tour hidden" role="dialog" aria-modal="true" aria-label="Guided tour">
+    <div id="tourSpot" class="tour-spot"></div>
+    <div id="tourCard" class="tour-card" aria-live="polite"></div>
+  </div>
+  <svg id="arrows" class="arrows" aria-hidden="true"></svg>
+  <svg id="engineFlow" class="engine-flow" aria-hidden="true"></svg>
+  <div id="engineTags" class="engine-tags" aria-hidden="true"></div>
+  <div id="toasts" class="toasts"></div>
+
+  <div id="levelsModal" class="modal hidden" role="dialog" aria-label="Lessons">
+    <div class="modal-card wide">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title">Lessons</h2>
+      <p class="modal-sub">Each lesson explains one part of how the JavaScript engine works, asks you to predict the result, then lets you step through the real execution.</p>
+      <div id="levelGrid"></div>
+    </div>
+  </div>
+
+  <div id="chalModal" class="modal hidden" role="dialog" aria-label="Coding challenges">
+    <div class="modal-card wide">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title">Coding challenges</h2>
+      <p class="modal-sub">Write the code yourself. Each challenge is checked automatically against tests. Use hints when stuck, then step through your own solution. <b id="chalProgress"></b></p>
+      <div id="chalGrid" class="level-grid"></div>
+    </div>
+  </div>
+
+  <div id="progressModal" class="modal hidden" role="dialog" aria-label="Progress">
+    <div class="modal-card">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title">Your progress</h2>
+      <div id="stats" class="stats"></div>
+      <h3 class="badges-title">Achievements</h3>
+      <div id="badgeList" class="badge-list"></div>
+      <div class="prog-io"><div><b>Back up your progress</b><small>XP, badges, solved questions, bookmarks, notes and code drafts are saved only in this browser.</small></div><span><button id="btnExport" class="btn small">⬇ Export</button><label class="btn small">⬆ Import<input type="file" id="importFile" accept="application/json,.json" hidden></label></span></div>
+    </div>
+  </div>
+
+  <div id="briefModal" class="modal hidden" role="dialog" aria-label="Lesson">
+    <div class="modal-card">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title" id="briefTitle">Lesson</h2>
+      <div class="brief-tabs">
+        <button id="tabLesson" class="tab active">Lesson</button>
+        <button id="tabQuiz" class="tab">Predict the output</button>
+      </div>
+      <div id="lessonBody" class="lesson"></div>
+      <div id="quizBody" class="quiz hidden"></div>
+      <div class="brief-foot"><button id="briefStart" class="btn primary">Next: predict, then watch</button></div>
+    </div>
+  </div>
+
+  <div id="compareModal" class="modal hidden" role="dialog" aria-label="Compare two versions">
+    <div class="modal-card wide">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title">Compare two versions</h2>
+      <p class="fn-meta">Both run in the same engine with the same random seed. Change one line (for example <code>var</code> → <code>let</code>, or remove an <code>await</code>) and see what changes.</p>
+      <div class="cmp-grid">
+        <label><span id="cmpNameA">Version A</span><textarea id="cmpA" spellcheck="false" rows="12"></textarea></label>
+        <label><span id="cmpNameB">Version B</span><textarea id="cmpB" spellcheck="false" rows="12"></textarea></label>
+      </div>
+      <div class="iv-row2"><button id="cmpRun" class="btn primary small">Run both</button><button id="cmpReset" class="btn small">Reset both to the current code</button></div>
+      <div id="cmpOut"></div>
+    </div>
+  </div>
+
+  <div id="labModal" class="modal hidden" role="dialog" aria-label="Big-O lab">
+    <div class="modal-card wide">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title">📈 Big-O lab</h2>
+      <p class="fn-meta">Runs the code for several input sizes <code>n</code> and counts the engine steps. Compare algorithms by running several presets: their lines stay on the chart.</p>
+      <div class="lab-grid2">
+        <div class="lab-form">
+          <label>Preset <select id="labPreset"></select></label>
+          <label>Setup <small>(not counted: build the input, define functions)</small><textarea id="labSetup" rows="7" spellcheck="false"></textarea></label>
+          <label>Measure <small>(counted)</small><textarea id="labMeasure" rows="3" spellcheck="false"></textarea></label>
+          <div class="lab-inline"><label>Sizes <input id="labSizes" type="text"></label><label>Name <input id="labName" type="text"></label></div>
+          <div class="iv-row2"><button id="labRun" class="btn primary small">▶ Measure</button><button id="labClear" class="btn small">Clear chart</button><button id="labFromCode" class="btn small">Use my code</button></div>
+          <div id="labNote" class="fn-meta"></div>
+        </div>
+        <div><div id="labChart" class="lab-chart"></div><div id="labTable"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="keysModal" class="modal hidden" role="dialog" aria-label="Keyboard shortcuts">
+    <div class="modal-card">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title">Keyboard shortcuts</h2>
+      <table class="keys-table">
+        <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+        <tr><td><kbd>→</kbd> <kbd>←</kbd></td><td>Step forward / back</td></tr>
+        <tr><td><kbd>↓</kbd></td><td>Step over (skip the inside of a call)</td></tr>
+        <tr><td><kbd>↑</kbd></td><td>Step out (finish the current function)</td></tr>
+        <tr><td><kbd>Home</kbd> <kbd>End</kbd></td><td>First / last step</td></tr>
+        <tr><td><kbd>B</kbd></td><td>Run to the next breakpoint (click a line number to set one)</td></tr>
+        <tr><td><kbd>E</kbd></td><td>Edit the code</td></tr>
+        <tr><td><kbd>V</kbd></td><td>Inline values on / off</td></tr>
+        <tr><td><kbd>F</kbd></td><td>Flow arrows on / off</td></tr>
+        <tr><td><kbd>A</kbd></td><td>Reference arrows (variable → object) on / off</td></tr>
+        <tr><td><kbd>X</kbd></td><td>Expression evaluation on / off</td></tr>
+        <tr><td><kbd>R</kbd></td><td>Array view on / off</td></tr>
+        <tr><td><kbd>T</kbd></td><td>Call tree on / off</td></tr>
+        <tr><td><kbd>G</kbd></td><td>Heap graph view on / off</td></tr>
+        <tr><td><kbd>C</kbd></td><td>Garbage-collection details on / off</td></tr>
+        <tr><td><kbd>N</kbd></td><td>Engine internals on / off</td></tr>
+        <tr><td><kbd>1</kbd>–<kbd>4</kbd></td><td>View presets: Minimal, Beginner, Standard, Full detail</td></tr>
+        <tr><td><kbd>I</kbd></td><td>Open the interview questions</td></tr>
+        <tr><td><kbd>?</kbd></td><td>This list</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Close a window</td></tr>
+      </table>
+      <p class="fn-meta">Tip: click anywhere on the timeline strip to jump to that step.</p>
+      <p><button id="btnTour" class="btn small">🧭 Take the tour again</button></p>
+    </div>
+  </div>
+
+  <div id="roadmapModal" class="modal hidden" role="dialog" aria-label="React path">
+    <div class="modal-card rm-card">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title">⚛️ Your path to React interviews</h2>
+      <div class="rm-tabs" role="tablist">
+        <button class="tab on" data-rmtab="cheat" role="tab">Cheat sheet</button>
+        <button class="tab" data-rmtab="interview" role="tab">Interview day</button>
+        <button class="tab" data-rmtab="design" role="tab">System design</button>
+      </div>
+      <div id="roadmapBody" class="rm-body"></div>
+    </div>
+  </div>
+
+  <div id="helpModal" class="modal hidden" role="dialog" aria-label="Reference">
+    <div class="modal-card">
+      <button class="close" data-close>✕</button>
+      <h2 class="modal-title">Reference: how the engine runs your code</h2>
+      <div class="guide">
+        <div><b>Suggested workflow.</b> Read the lesson → predict the output → step through the execution and read each explanation → click lines you don't understand → solve the matching challenge without looking at the solution.</div>
+        <div><b>Creation phase.</b> Before running anything, the engine scans the code and allocates every declaration (<i>hoisting</i>): <code>var</code> → <code>undefined</code>, <code>function</code> → the whole function, <code>let</code>/<code>const</code>/<code>class</code> → uninitialized (Temporal Dead Zone).</div>
+        <div><b>Execution phase.</b> Statements run top to bottom and values are assigned.</div>
+        <div><b>Call stack.</b> Each call creates an execution context (its own variable environment, <code>this</code> and scope chain). It is pushed on call and popped on return.</div>
+        <div><b>Scope chain and closures.</b> Name lookup walks outward through the scopes where a function was <i>defined</i>. A function keeps those scopes alive after the outer function returns.</div>
+        <div><b>Heap and garbage collection.</b> Objects live in the heap; variables hold references. <b>GC view</b> shows the root that keeps each object reachable; unreachable objects are collected (mark-and-sweep).</div>
+        <div><b>Web APIs, queues, event loop.</b> Timers, <code>fetch</code> and DOM events are handled by the host. Their callbacks enter the callback queue; the event loop runs one task when the stack is empty, then drains the microtask queue (promise reactions, <code>await</code> continuations).</div>
+        <div><b>Paused functions.</b> <code>async</code> functions at <code>await</code>, generators at <code>yield</code> and modules at top-level <code>await</code> leave the stack and keep their state.</div>
+        <div><b>Simulated host.</b> <code>fetch</code> routes: <code>/api/users</code>, <code>/api/users/1–3</code>, <code>/api/todos</code>, <code>/api/slow</code>, <code>/api/error</code>; add your own with <code>mockFetch(url, data, { status, delay })</code>. Page elements <code>#title #btn #name #output</code>; <code>simulateClick(sel, ms)</code>, <code>simulateTyping(sel, text, ms)</code>. Split code into modules with <code>// @file name.js</code> lines.</div>
+        <div><b>More environments.</b> Start the code with <code>// @env node</code> to run it as <b>Node.js</b> (<code>process.nextTick</code>, <code>setImmediate</code>, event-loop phases, <code>require("events")</code>, <code>require("util")</code>). Add a file whose name contains "worker" (e.g. <code>// @file worker.js</code>) and start it with <code>new Worker("worker.js")</code> to use a <b>Web Worker</b>. Turn on <b>Internals</b> in the Heap to see simulated hidden classes, inline caches and hot functions.</div>
+        <div><b>Real browser features.</b> <code>fetch("https://…")</code> requests the real internet: the app fetches each URL once, then replays the program with the real response and timing (servers must allow cross-site requests, known as CORS). <code>alert</code>/<code>confirm</code>/<code>prompt</code> show real dialogs, and your answers are replayed. <code>localStorage</code> is kept between runs. Add a <code>// @file index.html</code> section to write your own page; click or type in the <b>Page</b> preview and the program re-runs with your event.</div>
+        <div><b>Step limit.</b> <select id="stepLimit"><option value="5000">5,000 steps</option><option value="10000">10,000 steps</option><option value="20000">20,000 steps</option><option value="50000">50,000 steps</option></select> Higher limits allow longer programs but use more memory.</div>
+        <div><b>Keyboard.</b> <kbd>→</kbd> next · <kbd>←</kbd> back · <kbd>Space</kbd> play/pause · <kbd>↓</kbd> step over · <kbd>↑</kbd> step out · <kbd>B</kbd> next breakpoint · <kbd>Home</kbd>/<kbd>End</kbd> · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> run · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> check a challenge.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/codemirror/codemirror.min.js"></script>
+  <script src="vendor/codemirror/javascript.min.js"></script>
+  <script src="vendor/codemirror/matchbrackets.min.js"></script>
+  <script src="vendor/codemirror/closebrackets.min.js"></script>
+  <script src="vendor/acorn.js"></script>
+  <script>window.acorn || document.write('<script src="https://cdn.jsdelivr.net/npm/acorn@8.11.3/dist/acorn.js"><\/script>');</script>
+  <script src="js/examples.js"></script>
+  <script src="js/lessons.js"></script>
+  <script src="js/react-lessons.js"></script>
+  <script src="js/challenges.js"></script>
+  <script src="js/react-challenges.js"></script>
+  <script src="js/interview.js"></script>
+  <script src="js/interview-more.js"></script>
+  <script src="js/interview-extra.js"></script>
+  <script src="js/write-it.js"></script>
+  <script src="js/react-interview.js"></script>
+  <script src="js/react-interview-more.js"></script>
+  <script src="js/react-interview-eco.js"></script>
+  <script src="js/engine/core.js"></script>
+  <script src="js/engine/builtins.js"></script>
+  <script src="js/engine/classes.js"></script>
+  <script src="js/engine/promises.js"></script>
+  <script src="js/engine/methods.js"></script>
+  <script src="js/engine/members.js"></script>
+  <script src="js/engine/program.js"></script>
+  <script src="js/engine/statements.js"></script>
+  <script src="js/engine/expressions.js"></script>
+  <script src="js/engine/extras.js"></script>
+  <script src="js/engine/browser.js"></script>
+  <script src="js/engine/platform.js"></script>
+  <script src="js/engine/threads.js"></script>
+  <script src="js/engine/node.js"></script>
+  <script src="js/engine/protos.js"></script>
+  <script src="js/engine/observers.js"></script>
+  <script src="js/engine/evalviz.js"></script>
+  <script src="js/engine/nodeplus.js"></script>
+  <script src="js/engine/typescript.js"></script>
+  <script src="js/engine/jsx.js"></script>
+  <script src="js/react/reactlite.js"></script>
+  <script src="js/engine/react.js"></script>
+  <script src="js/explain.js"></script>
+  <script src="js/app-config.js"></script>
+  <script src="js/react-inside.js"></script>
+  <script src="js/react-panel.js"></script>
+  <script src="js/react-roadmap.js"></script>
+  <script src="js/react-course-data.js"></script>
+  <script src="js/react-course-practice.js"></script>
+  <script src="js/react-pairs.js"></script>
+  <script src="js/react-concepts.js"></script>
+  <script src="js/react-practice.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

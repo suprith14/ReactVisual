@@ -1,0 +1,598 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JS Engine Quest — Tests</title>
+  <style>
+    :root { --bg: #0b0e1f; --panel: #161b36; --line: #2b3264; --text: #e8ebff; --muted: #8e96c8; --ok: #3ee6a8; --bad: #ff5d73; }
+    @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #f4f6fc; --panel: #fff; --line: #d6dbec; --text: #1b1f36; --muted: #5d6488; --ok: #0a8a5b; --bad: #c8243d; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; padding: 16px; }
+    h1 { font-size: 20px; margin: 0 0 4px; } p { color: var(--muted); margin: 0 0 14px; }
+    .sum { font-size: 16px; font-weight: 700; margin: 10px 0; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; }
+    h2 { font-size: 15px; margin: 0 0 8px; }
+    .row { font-family: Consolas, monospace; font-size: 12.5px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    pre { white-space: pre-wrap; margin: 2px 0 6px 18px; color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 JS Engine Quest — test suite</h1>
+  <p>Runs every level, feature program and challenge through the visualizer's engine, then compares the console output with <b>real JavaScript</b> running in this browser. Open this file after changing the engine to catch mistakes.</p>
+  <div class="sum" id="sum">Running…</div>
+  <div id="out"></div>
+
+  <script src="vendor/acorn.js"></script>
+  <script src="js/examples.js"></script>
+  <script src="js/react-lessons.js"></script>
+  <script>window.JS_LEVELS.splice(0, window.REACT_LEVELS.length); // the React levels are tested on their own</script>
+  <script src="js/challenges.js"></script>
+  <script src="js/react-challenges.js"></script>
+  <script src="js/react-course-data.js"></script>
+  <script src="js/react-course-practice.js"></script>
+  <script src="js/react-pairs.js"></script>
+  <script src="js/interview.js"></script>
+  <script src="js/interview-more.js"></script>
+  <script src="js/interview-extra.js"></script>
+  <script src="js/write-it.js"></script>
+  <script src="js/react-interview.js"></script>
+  <script src="js/react-interview-more.js"></script>
+  <script src="js/react-interview-eco.js"></script>
+  <script src="js/engine/core.js"></script>
+  <script src="js/engine/builtins.js"></script>
+  <script src="js/engine/classes.js"></script>
+  <script src="js/engine/promises.js"></script>
+  <script src="js/engine/methods.js"></script>
+  <script src="js/engine/members.js"></script>
+  <script src="js/engine/program.js"></script>
+  <script src="js/engine/statements.js"></script>
+  <script src="js/engine/expressions.js"></script>
+  <script src="js/engine/extras.js"></script>
+  <script src="js/engine/browser.js"></script>
+  <script src="js/engine/platform.js"></script>
+  <script src="js/engine/threads.js"></script>
+  <script src="js/engine/node.js"></script>
+  <script src="js/engine/protos.js"></script>
+  <script src="js/engine/observers.js"></script>
+  <script src="js/engine/evalviz.js"></script>
+  <script src="js/engine/nodeplus.js"></script>
+  <script src="js/engine/typescript.js"></script>
+  <script src="js/engine/jsx.js"></script>
+  <script src="js/react/reactlite.js"></script>
+  <script src="js/engine/react.js"></script>
+  <script src="js/explain.js"></script>
+  <script>
+  (async function () {
+    'use strict';
+    const out = document.getElementById('out');
+    let pass = 0, fail = 0;
+    const section = title => { const s = document.createElement('section'); s.innerHTML = `<h2>${title}</h2>`; out.appendChild(s); return s; };
+    const row = (sec, ok, label, detail) => {
+      ok ? pass++ : fail++;
+      const d = document.createElement('div');
+      d.className = 'row ' + (ok ? 'ok' : 'bad');
+      d.textContent = (ok ? '✔ ' : '✘ ') + label;
+      sec.appendChild(d);
+      if (detail && !ok) { const p = document.createElement('pre'); p.textContent = detail; sec.appendChild(p); }
+    };
+
+    // ---- run code in the visualizer engine
+    function engine(code) {
+      const r = new JSEngine.Interpreter(code).run();
+      if (r.error) return { error: r.error, lines: [] };
+      const last = r.trace[r.trace.length - 1];
+      return { lines: last.console.map(l => l.text), steps: r.trace.length, last };
+    }
+
+    // ---- run the same code for real, with stand-ins for the visualizer's pretend browser
+    function real(code, waitMs) {
+      return new Promise(done => {
+        const lines = [];
+        const fmt = a => typeof a === 'bigint' ? a + 'n' : typeof a === 'string' ? a
+          : Array.isArray(a) ? '[' + a.map(x => (typeof x === 'string' ? `'${x}'` : String(x))).join(', ') + ']' : String(a);
+        let depth = 0; const counts = {};
+        const con = { log: (...a) => lines.push('  '.repeat(depth) + a.map(fmt).join(' ')), group: (...a) => { lines.push('▾ ' + a.join(' ')); depth++; }, groupEnd: () => depth--, count: (k = 'default') => { counts[k] = (counts[k] || 0) + 1; lines.push(k + ': ' + counts[k]); } };
+        con.info = con.log; con.warn = con.log; con.error = con.log;
+        const users = [{ id: 1, name: 'Ada Lovelace' }, { id: 2, name: 'Linus' }, { id: 3, name: 'Grace Hopper' }];
+        const fakeFetch = url => new Promise(res => setTimeout(() => {
+          let status = 404, data = { error: 'Not found' };
+          const m = String(url).match(/^\/api\/users\/(\d+)$/);
+          if (m && users[+m[1] - 1]) { status = 200; data = users[+m[1] - 1]; }
+          else if (url === '/api/users') { status = 200; data = users; }
+          else if (url === '/api/todos') { status = 200; data = [{ id: 1 }, { id: 2 }, { id: 3 }]; }
+          res({ status, ok: status < 300, json: () => Promise.resolve(data) });
+        }, 300));
+        const els = {};
+        const mk = id => (els[id] = { id, textContent: '', listeners: [], addEventListener(t, f) { this.listeners.push([t, f]); }, click() { this.listeners.forEach(([t, f]) => t === 'click' && f.call(this, { type: 'click', target: this })); } });
+        ['btn', 'output', 'title', 'name'].forEach(mk);
+        const lis = [];
+        const doc = { getElementById: id => els[id], querySelector: s => els[s.slice(1)], querySelectorAll: s => (s === 'li' ? lis : []), createElement: tag => ({ tag, textContent: '' }), body: { appendChild(c) { if (c.tag === 'li') lis.push(c); } } };
+        const click = (sel, d = 0) => setTimeout(() => els[sel.slice(1)].click(), d);
+        const onRej = e => { lines.push('Uncaught (in promise) ' + e.reason); e.preventDefault(); };
+        window.addEventListener('unhandledrejection', onRej);
+        try { new Function('console', 'fetch', 'document', 'simulateClick', 'requestAnimationFrame', code)(con, fakeFetch, doc, click, cb => setTimeout(() => cb(0), 16)); }
+        catch (e) { lines.push('Uncaught ' + e.name + ': ' + e.message); }
+        setTimeout(() => { window.removeEventListener('unhandledrejection', onRej); done(lines); }, waitMs);
+      });
+    }
+
+    // programs whose real-JS output can't be reproduced exactly (module files, console formatting of objects)
+    // module files can't run with new Function, and real garbage collection timing is unpredictable
+    const SKIP_REAL = new Set(['modules', 'tla', 'platform', 'realnet', 'webpage', 'storage', 'descriptors', 'binary', 'urlabort', 'lazyimport', 'workers', 'nodeloop', 'emitter', 'sharedmem', 'nodefs', 'nodehttp', 'mutationobs', 'commonjs', 'typescript', 'streams']);
+    const FEATURES = {
+      closuresInLoops: 'const fns = []; for (let i = 0; i < 3; i++) fns.push(() => i); console.log(fns.map(f => f()).join());',
+      promiseOrder: 'setTimeout(()=>console.log("t"),0); Promise.resolve().then(()=>console.log("p1")).then(()=>console.log("p2")); queueMicrotask(()=>console.log("q")); console.log("s");',
+      adoptTicks: 'Promise.resolve().then(()=>{console.log("a"); return Promise.resolve();}).then(()=>console.log("b"));\nPromise.resolve().then(()=>console.log(1)).then(()=>console.log(2)).then(()=>console.log(3)).then(()=>console.log(4));',
+      asyncOrder: 'async function x(){ console.log(1); await undefined; console.log(3); }\nasync function y(){ console.log(2); await undefined; console.log(4); }\nx(); y();',
+      classes: 'class A { #s = 1; static n = 0; constructor(v){ this.v = v; A.n++; } get s(){ return this.#s; } m(){ return "A" + this.v; } }\nclass B extends A { m(){ return super.m() + "B"; } }\nconst b = new B(2); console.log(b.m(), b.s, A.n, b instanceof A, Object.keys(b).join());',
+      generators: 'function* g(){ const r = yield 1; console.log("got", r); yield 2; return 3; }\nconst it = g(); console.log(it.next().value, it.next("x").value, JSON.stringify(it.next()), JSON.stringify(it.next()));\nfunction* inf(){ let i = 0; while (true) yield i++; } const [p, q] = inf(); console.log(p, q);',
+      asyncGen: 'const w = ms => new Promise(r => setTimeout(r, ms));\nasync function* s(){ yield 1; await w(5); yield 2; }\n(async () => { for await (const v of s()) console.log(v); })();',
+      mapSet: 'const m = new Map([["a", 1]]); m.set("b", 2); console.log(m.size, [...m.keys()].join(), [...new Set([1, 1, 2])].join());',
+      regex: 'console.log("a1b22".match(/\\d+/g).join("|"), "2024-01-05".replace(/(\\d+)-(\\d+)-(\\d+)/, "$3/$2/$1"), /^h/i.test("Hi"));',
+      strict: '"use strict"; function t(){ return this; } console.log(t()); try { undeclared = 1; } catch (e) { console.log(e.name); }',
+      thenable: '(async () => { const v = await { then(r){ r(42); } }; console.log(v); })();',
+      toPrimitive: 'const o = { valueOf(){ return 5; }, toString(){ return "five"; } }; console.log(o + 1, `${o}`, o > 3);',
+      bigint: 'console.log(2n ** 64n, typeof 1n, 7n / 2n); try { 1n + 1; } catch (e) { console.log(e.name); }',
+      proxy: 'const p = new Proxy({ a: 1 }, { get(t, k){ return k in t ? t[k] : "none"; } }); console.log(p.a, p.b);',
+      extendsArray: 'class S extends Array { top(){ return this[this.length - 1]; } } const s = new S(); s.push(1, 2); console.log(s.top(), s instanceof Array);',
+      fetch: '(async () => { const r = await fetch("/api/users/2"); console.log((await r.json()).name, r.ok); })(); fetch("/api/x").then(r => console.log(r.status));',
+      dom: 'const b = document.getElementById("btn"); b.addEventListener("click", e => console.log("clicked", e.type)); simulateClick("#btn", 50); b.click();',
+      tdzError: 'try { console.log(x); let x = 1; } catch (e) { console.log(e.name); }',
+      destructuring: 'const { a, b: [c, ...d] } = { a: 1, b: [2, 3, 4] }; console.log(a, c, d.join());',
+      evalDirect: 'const x = 10; console.log(eval("x * 2")); function f(){ eval("var leaked = 5"); return leaked; } console.log(f()); const add = new Function("a", "b", "return a + b"); console.log(add(2, 3)); try { eval("1 +"); } catch (e) { console.log(e.name); }',
+      intl: 'console.log(new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(1234.5), new Intl.PluralRules("en-US").select(2), new Intl.ListFormat("en", { type: "conjunction" }).format(["a", "b"]), (1234.5).toLocaleString("de-DE"));',
+      labels: 'outer: for (let i = 0; i < 3; i++) { for (let j = 0; j < 3; j++) { if (j === 1) continue outer; if (i === 2) break outer; console.log(i, j); } }',
+    };
+
+    // ---- 1) every level
+    const lv = section('📚 Levels (engine output vs real JavaScript)');
+    for (const L of window.JS_LEVELS) {
+      const e = engine(L.code);
+      if (e.error) { row(lv, false, L.id, e.error); continue; }
+      if (SKIP_REAL.has(L.id)) { row(lv, e.last.kind === 'done', `${L.id} (engine only, ${e.steps} steps)`, e.lines.join('\n')); continue; }
+      const r = await real(L.code, /interval/.test(L.id) ? 3500 : 1600);
+      const ok = JSON.stringify(e.lines) === JSON.stringify(r);
+      row(lv, ok, `${L.id} (${e.steps} steps)`, `engine: ${e.lines.join(' | ')}\nreal:   ${r.join(' | ')}`);
+    }
+
+    // ---- 2) feature programs
+    const ft = section('⚙️ Language features');
+    for (const [name, code] of Object.entries(FEATURES)) {
+      const e = engine(code);
+      if (e.error) { row(ft, false, name, e.error); continue; }
+      const r = await real(code, 900);
+      const ok = JSON.stringify(e.lines) === JSON.stringify(r);
+      row(ft, ok, name, `engine: ${e.lines.join(' | ')}\nreal:   ${r.join(' | ')}`);
+    }
+    const mod = engine('// @file a.js\nexport let n = 0; export function inc(){ n++; }\n// @file main.js\nimport { n, inc } from "./a.js"; console.log(n); inc(); console.log(n);');
+    row(ft, JSON.stringify(mod.lines) === JSON.stringify(['0', '1']), 'modules: live import bindings', mod.lines.join(' | '));
+    const tla = engine('// @file a.js\nconsole.log("a1"); await new Promise(r => setTimeout(r, 50)); export const v = 7; console.log("a2");\n// @file main.js\nimport { v } from "./a.js"; console.log("main", v);');
+    row(ft, JSON.stringify(tla.lines) === JSON.stringify(['a1', 'a2', 'main 7']), 'modules: top-level await makes importers wait', tla.lines.join(' | '));
+    const weak = engine('let o = { n: 1 }; const w = new WeakRef(o); const r = new FinalizationRegistry(h => console.log("cleanup", h)); r.register(o, "o"); console.log(w.deref().n); o = null; setTimeout(() => console.log(w.deref()), 100);');
+    // cleanup callbacks have no guaranteed order relative to timers, so compare the lines in any order
+    row(ft, JSON.stringify(weak.lines.slice().sort()) === JSON.stringify(['1', 'cleanup o', 'undefined']), 'WeakRef + FinalizationRegistry follow the simulated GC', weak.lines.join(' | '));
+    const mock = engine('mockFetch("/api/x", { ok: 1 }, { delay: 20 }); fetch("/api/x").then(r => r.json()).then(d => console.log(d.ok));');
+    row(ft, mock.lines.join() === '1', 'mockFetch custom routes', mock.lines.join(' | '));
+
+    // ---- browser environment (engine-level: these use data the app normally collects between runs)
+    const br = section('🌐 Browser environment');
+    const engineWith = (code, opts) => { const it = new JSEngine.Interpreter(code, opts); const r = it.run(); const last = r.trace[r.trace.length - 1]; return { it, lines: last.console.map(l => l.text), last }; };
+    const netCode = 'fetch("https://api.example.com/u").then(r => r.json()).then(u => console.log(u.name)); fetch("https://down.example.com/").catch(e => console.log(e.message));';
+    const n1 = engineWith(netCode, { netCache: new Map() });
+    row(br, n1.it.netMisses.length === 2, 'real fetch: first run reports which URLs to download');
+    const cache = new Map([[n1.it.netMisses[0].key, { status: 200, headers: [], body: '{"name":"Real Ada"}', latency: 80 }], [n1.it.netMisses[1].key, { error: 'Failed to fetch', latency: 20 }]]);
+    const n2 = engineWith(netCode, { netCache: cache });
+    row(br, n2.lines.join('|') === 'Failed to fetch|Real Ada', 'real fetch: replay uses the real response and real timing', n2.lines.join(' | '));
+    const dl = engineWith('const a = confirm("ok?"); const b = prompt("name?"); console.log(a, b);', { answers: [true, 'Ada'] });
+    row(br, dl.lines.join() === 'true Ada', 'confirm / prompt answers are replayed', dl.lines.join(' | '));
+    const sg = engineWith('localStorage.setItem("n", Number(localStorage.getItem("n") || 0) + 1); console.log(localStorage.getItem("n"), typeof localStorage.getItem("n"));', { storage: { n: '2' } });
+    row(br, sg.lines.join() === '3 string' && sg.it.storageOut.n === '3', 'localStorage reads saved values and returns strings', sg.lines.join(' | '));
+    const pg = engineWith('// @file index.html\n<ul id="l"><li>a</li><li>b</li></ul>\n// @file s.js\ndocument.querySelector("#l").addEventListener("click", e => { e.target.classList.add("x"); console.log(e.target.textContent, e.currentTarget.id, e.target.className); }); simulateClick("#l li:last-child", 10);', {});
+    row(br, pg.lines.join() === 'b l x', 'real DOM: CSS selectors, bubbling (delegation), classList', pg.lines.join(' | '));
+    const ue = engineWith('// @file index.html\n<button>Go</button>\n// @file s.js\ndocument.querySelector("button").onclick = () => console.log("clicked");', { events: [{ type: 'click', path: [0], at: 5 }] });
+    row(br, ue.lines.join() === 'clicked', 'clicks made in the page preview are replayed as events', ue.lines.join(' | '));
+    const xh = engineWith('const x = new XMLHttpRequest(); x.open("GET", "/api/users/2"); x.onload = () => console.log(x.status, JSON.parse(x.responseText).name); x.send();', {});
+    row(br, xh.lines.join() === '200 Linus', 'XMLHttpRequest', xh.lines.join(' | '));
+    // ---- platform features (expected values checked against real browsers / Node)
+    const pf = section('🧰 Platform features');
+    const chk = (label, code, expect, opts) => { const r = engineWith(code, opts || {}); row(pf, r.lines.join(' | ') === expect, label, `engine: ${r.lines.join(' | ')}\nexpect: ${expect}`); };
+    chk('Promise.allSettled / any / AggregateError', 'Promise.allSettled([Promise.resolve(1), Promise.reject(new Error("x"))]).then(r => console.log(r.map(x => x.status).join())); Promise.any([Promise.reject(1), Promise.reject(2)]).catch(e => console.log(e.name, e.errors.length));', 'fulfilled,rejected | AggregateError 2');
+    chk('property descriptors & seal', 'const o = {}; Object.defineProperty(o, "k", { value: 1 }); o.k = 2; const d = Object.getOwnPropertyDescriptor(o, "k"); console.log(o.k, Object.keys(o).length, JSON.stringify(o), d.writable, d.enumerable); const s = Object.seal({ a: 1 }); s.b = 1; delete s.a; console.log(JSON.stringify(s));', '1 0 {} false false | {"a":1}');
+    chk('toSorted / with / groupBy / structuredClone / cause', 'const a = [3, 1, 2]; console.log(a.toSorted().join(), a.join(), a.with(0, 9).join()); console.log(Object.groupBy([1, 2, 3], n => n % 2 ? "odd" : "even").odd.join()); const c = structuredClone({ n: [1] }); console.log(JSON.stringify(c), new Error("e", { cause: "why" }).cause);', '1,2,3 3,1,2 9,1,2 | 1,3 | {"n":[1]} why');
+    chk('typed arrays, shared buffers, TextEncoder', 'const b = new Uint8Array(2); b[0] = 256; b[1] = -1; const buf = new ArrayBuffer(4); new Uint32Array(buf)[0] = 258; console.log(b.join(), new Uint8Array(buf).join(), new TextEncoder().encode("é").length);', '0,255 2,1,0,0 2');
+    chk('URL / URLSearchParams', 'const u = new URL("https://a.example/p?x=1"); u.searchParams.set("y", "2"); console.log(u.hostname, u.search, new URLSearchParams("a=1&b=2").get("b"));', 'a.example ?x=1&y=2 2');
+    chk('AbortController cancels fetch', 'const c = new AbortController(); fetch("/api/slow", { signal: c.signal }).catch(e => console.log(e.name)); setTimeout(() => c.abort(), 10);', 'AbortError');
+    chk('Symbol.hasInstance / toStringTag / Object.prototype.toString', 'class Even { static [Symbol.hasInstance](n) { return n % 2 === 0; } } console.log(4 instanceof Even, Object.prototype.toString.call([]), String({ get [Symbol.toStringTag]() { return "X"; } }));', 'true [object Array] [object X]');
+    chk('dynamic import()', '// @file m.js\nexport const v = 5;\n// @file main.js\nimport("./m.js").then(m => console.log(m.v));', '5');
+    chk('Web Worker messages are copies', '// @file worker.js\nself.onmessage = e => { e.data.push(1); postMessage(e.data.length); };\n// @file main.js\nconst w = new Worker("worker.js"); const arr = []; w.onmessage = e => console.log(e.data, arr.length); w.postMessage(arr);', '1 0');
+    chk('Node: nextTick → promises → timers → check', '// @env node\nsetImmediate(() => console.log("i")); setTimeout(() => console.log("t"), 0); Promise.resolve().then(() => console.log("p")); process.nextTick(() => console.log("n")); console.log("s");', 's | n | p | t | i');
+    chk('Node: EventEmitter + util.promisify', '// @env node\nconst E = require("events"); const e = new E(); e.once("x", v => console.log("once", v)); e.emit("x", 1); e.emit("x", 2); require("util").promisify((a, cb) => cb(null, a + 1))(1).then(v => console.log(v));', 'once 1 | 2');
+    const s1 = engineWith('console.log(Math.random(), crypto.randomUUID());', { seed: 9 }).lines.join(), s2 = engineWith('console.log(Math.random(), crypto.randomUUID());', { seed: 9 }).lines.join();
+    row(pf, s1 === s2, 'seeded randomness repeats exactly on re-runs');
+    const intl = engineWith('function P(x){ this.x = x; } const a = new P(1), b = new P(2), c = { x: 3, y: 1 }; const f = o => o.x; f(a); f(b); f(c); console.log("ok");', {});
+    row(pf, intl.last.ic && intl.last.ic.some(s => s.shapes === 2), 'engine internals: inline cache sees 2 hidden classes', JSON.stringify(intl.last.ic));
+    const lim = engineWith('while (true) {}', { maxSteps: 150 });
+    row(br, lim.last.kind === 'error' && /150 steps/.test(lim.last.msg), 'step limit setting');
+
+    // ---- threads, shared memory and Node built-ins (expected values checked against real Chrome / Node)
+    const th = section('🧵 Threads, shared memory & Node modules');
+    const chk2 = (label, code, expect, test) => {
+      let r; try { r = engineWith(code, {}); } catch (e) { row(th, false, label, String(e && e.stack || e)); return; }
+      const got = r.lines.join(' | ');
+      row(th, got === expect && r.last.kind === 'done' && (!test || test(r)), label, `engine: ${got}\nexpect: ${expect}\nlast: ${r.last.kind} ${r.last.msg || ''}`);
+    };
+    chk2('SharedArrayBuffer is shared (not copied) with a worker', '// @file worker.js\nself.onmessage = e => { const a = new Int32Array(e.data); a[0] = 42; postMessage("done"); };\n// @file main.js\nconst sab = new SharedArrayBuffer(4); const arr = new Int32Array(sab); const w = new Worker("worker.js"); w.onmessage = () => console.log(arr[0]); w.postMessage(sab);', '42');
+    const race = safe => `// @file worker.js\nself.onmessage = e => {\n  const a = new Int32Array(e.data);\n  for (let i = 0; i < 3; i++) {\n    ${safe ? 'Atomics.add(a, 0, 1);' : 'const v = a[0];\n    a[0] = v + 1;'}\n  }\n  postMessage("done");\n};\n// @file main.js\nconst sab = new SharedArrayBuffer(4); const a = new Int32Array(sab); let done = 0;\nfor (let k = 0; k < 2; k++) { const w = new Worker("worker.js"); w.onmessage = () => { if (++done === 2) console.log(a[0]); }; w.postMessage(sab); }`;
+    chk2('two threads interleave: unsafe read-then-write loses updates', race(false), '3', r => r.it.trace.some(s => s.threads && s.threads.length === 2));
+    chk2('Atomics.add makes the same counter correct', race(true), '6');
+    chk2('Atomics.wait sleeps until Atomics.notify', '// @file waiter.worker.js\nself.onmessage = e => { const a = new Int32Array(e.data); const r = Atomics.wait(a, 0, 0); postMessage("woke:" + r + ":" + a[1]); };\n// @file notifier.worker.js\nself.onmessage = e => { const a = new Int32Array(e.data); a[1] = 42; Atomics.store(a, 0, 1); Atomics.notify(a, 0); postMessage("notified"); };\n// @file main.js\nconst sab = new SharedArrayBuffer(8);\nfor (const f of ["waiter.worker.js", "notifier.worker.js"]) { const w = new Worker(f); w.onmessage = e => console.log(e.data); w.postMessage(sab); }', 'notified | woke:ok:42', r => r.it.trace.some(s => s.threads && s.threads.some(t => t.sleeping)));
+    chk2('Atomics.wait is not allowed on the main thread', 'try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0); } catch (e) { console.log(e.name); } console.log(Atomics.add(new Int32Array(2), 1, 5), Atomics.compareExchange(new Int32Array([7]), 0, 7, 9));', 'TypeError | 0 7');
+    chk2('Node path module', '// @env node\nconst path = require("path"); console.log(path.join("/a/b", "../c", "x.txt"), path.basename("/a/b.js", ".js"), path.extname("f.tar.gz"), path.resolve("data", "f.json"), path.relative("/a/b/c", "/a/d"), path.dirname("/a/b/c"), path.parse("/x/y.md").name);', '/a/c/x.txt b .gz /home/user/app/data/f.json ../../d /a/b y');
+    chk2('Node fs: sync, callback and promise styles in the right order', '// @env node\n// @file todo.txt\nbuy milk\n// @file main.js\nconst fs = require("fs"); console.log(fs.readFileSync("todo.txt", "utf8").trim()); fs.readFile("todo.txt", "utf8", (err, t) => console.log("cb", err, t.length)); fs.promises.readFile("nope.txt").catch(e => console.log(e.code)); fs.writeFileSync("out.txt", "hi"); console.log(fs.existsSync("out.txt"), fs.readFileSync("out.txt").toString(), fs.readdirSync(".").join()); console.log("end");', 'buy milk | true hi out.txt,package.json,todo.txt | end | cb null 9 | ENOENT', r => r.last.files && r.last.files.some(f => f.name === 'out.txt' && f.changed));
+    chk2('Node http: server and fetch client in one program', '// @env node\nconst http = require("http");\nconst server = http.createServer((req, res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ path: req.url, m: req.method })); });\nserver.listen(3000, async () => { const r = await fetch("http://localhost:3000/hi?x=1"); const d = await r.json(); console.log(r.status, d.path, d.m, r.headers.get("content-type")); server.close(); });', '200 /hi?x=1 GET application/json');
+    chk2('Node http: POST body arrives as data/end events', '// @env node\nconst http = require("http");\nconst s = http.createServer((req, res) => { let body = ""; req.on("data", c => body += c); req.on("end", () => { res.statusCode = 201; res.end("got " + JSON.parse(body).n); }); }).listen(8080);\nfetch("http://localhost:8080/items", { method: "POST", body: JSON.stringify({ n: 3 }) }).then(r => r.text().then(t => console.log(r.status, t)));', '201 got 3');
+    chk2('browser: a data file is served to fetch', '// @file data.json\n{"n": 5}\n// @file main.js\nfetch("data.json").then(r => r.json()).then(d => console.log(d.n));', '5');
+    chk2('MutationObserver: records arrive as one microtask, in the right order', '// @file index.html\n<ul id="list"></ul>\n// @file main.js\nconst list = document.getElementById("list");\nnew MutationObserver(records => console.log("observer:", records.length, records[0].type, records[0].addedNodes.length)).observe(list, { childList: true });\nPromise.resolve().then(() => console.log("promise queued before the change"));\nlist.appendChild(document.createElement("li"));\nlist.appendChild(document.createElement("li"));\nPromise.resolve().then(() => console.log("promise queued after the change"));\nsetTimeout(() => console.log("timeout"), 0);\nconsole.log("sync done");', 'sync done | promise queued before the change | observer: 2 childList 1 | promise queued after the change | timeout');
+    chk2('MutationObserver: attribute changes with oldValue', '// @file index.html\n<p id="p" class="a">x</p>\n// @file main.js\nconst p = document.getElementById("p");\nconst mo = new MutationObserver(rs => rs.forEach(r => console.log(r.type, r.attributeName, r.oldValue)));\nmo.observe(p, { attributes: true, attributeOldValue: true });\np.className = "b";\np.setAttribute("title", "hi");', 'attributes class a | attributes title null');
+    chk2('ResizeObserver: initial notification (simulated sizes)', '// @file index.html\n<div id="box" style="width: 120px; height: 40px"></div>\n// @file main.js\nnew ResizeObserver(entries => console.log("size", entries[0].contentRect.width, entries[0].contentRect.height)).observe(document.getElementById("box"));\nconsole.log("observing");', 'observing | size 120 40');
+    chk2('Node: require() your own CommonJS files (cached)', '// @env node\n// @file math.js\nconsole.log("math.js runs once");\nlet calls = 0;\nmodule.exports = { add: (a, b) => { calls++; return a + b; }, count: () => calls };\n// @file greet.js\nexports.hello = name => "Hello " + name;\n// @file main.js\nconst math = require("./math.js");\nconst again = require("./math");\nconst { hello } = require("./greet.js");\nconsole.log(math.add(2, 3), math === again, math.count());\nconsole.log(hello("Ada"));\ntry { require("./missing.js"); } catch (e) { console.log(e.message.startsWith("Cannot find module")); }', 'math.js runs once | 5 true 1 | Hello Ada | true');
+    chk2('TypeScript: annotations, interfaces, generics, as, !, classes', '// @lang ts\ninterface User { id: number; name: string; tags?: string[] }\ntype Id = number | string;\nfunction greet(user: User, punct: string = "!"): string { return "Hi " + user.name + punct; }\nconst users: User[] = [{ id: 1, name: "Ada" }, { id: 2, name: "Bob", tags: ["x"] }];\nconst byId = new Map<number, User>();\nusers.forEach((u: User): void => { byId.set(u.id, u); });\nclass Box<T> {\n  private items: T[] = [];\n  readonly label: string;\n  constructor(label: string) { this.label = label; }\n  add(item: T): this { this.items.push(item); return this; }\n  get size(): number { return this.items.length; }\n}\nconst box = new Box<number>("nums").add(1).add(2);\nconst first = users[0]!;\nconst id = (first.id as number) + 1;\nlet total: number = 0, label: string = "sum";\nfor (const u of users) total += u.id;\nconst pick = <K extends keyof User>(u: User, key: K): User[K] => u[key];\nconst size = total > 2 ? "big" : "small";\nconsole.log(greet(users[0]), greet(byId.get(2)!, "?"), box.size, box.label, id, label, total, pick(first, "name"), size);', 'Hi Ada! Hi Bob? 2 nums 2 sum 3 Ada big');
+    (() => {
+      const r = new JSEngine.Interpreter('// @lang ts\nenum Color { Red, Green }\nconsole.log(Color.Red);', {}).run();
+      row(th, !!r.error && /^TypeScript: "enum"/.test(r.error) && r.errorLine === 2, 'TypeScript: unsupported syntax gives a clear error with its line', r.error);
+    })();
+    chk2('Temporal: immutable dates, add, until, compare, Duration', 'const d = Temporal.PlainDate.from("2024-01-31");\nconst e = d.add({ months: 1 });\nconsole.log(d.toString(), e.toString(), e.dayOfWeek, d.until(e).days, Temporal.PlainDate.compare(d, e));\nconsole.log(Temporal.Duration.from({ hours: 1, minutes: 90 }).total({ unit: "minutes" }));', '2024-01-31 2024-02-29 4 29 -1 | 150');
+    chk2('Node: crypto hashes and Buffer encodings', '// @env node\nconst crypto = require("crypto");\nconsole.log(crypto.createHash("sha256").update("abc").digest("hex"));\nconsole.log(crypto.createHash("sha1").update("a").update("bc").digest("hex"));\nconsole.log(Buffer.from("hi").toString("hex"), Buffer.from("aGk=", "base64").toString(), Buffer.from("héllo").length, Buffer.isBuffer(Buffer.alloc(2)));', 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad | a9993e364706816aba3e25717850c26c9cd0d89d | 6869 hi 6 true');
+    chk2('Node: stream pipeline, Transform and for await', '// @env node\nconst { Readable, Transform, Writable, pipeline } = require("stream");\nconst upper = new Transform({ transform(chunk, enc, cb) { cb(null, String(chunk).toUpperCase()); } });\nconst out = [];\nconst sink = new Writable({ write(chunk, enc, cb) { out.push(chunk); cb(); } });\npipeline(Readable.from(["a", "b", "c"]), upper, sink, () => console.log("done:", out.join("")));\n(async () => { const got = []; for await (const x of Readable.from([1, 2, 3])) got.push(x); console.log("for await:", got.join()); })();\nconsole.log("sync end");', 'sync end | done: ABC | for await: 1,2,3');
+    chk2('Node: fs.createReadStream in chunks', '// @env node\n// @file notes.txt\nline one\nline two\n// @file main.js\nconst fs = require("fs");\nconst chunks = [];\nfs.createReadStream("notes.txt", { encoding: "utf8", highWaterMark: 8 })\n  .on("data", c => chunks.push(c))\n  .on("end", () => console.log(chunks.length, chunks.join("").trim().split("\\n").length));', '3 2');
+    const lvCode = id => window.JS_LEVELS.find(l => l.id === id).code;
+    chk2('lesson sharedmem output', lvCode('sharedmem'), 'expected 6, got 3');
+    chk2('lesson nodefs output (same order as real Node)', lvCode('nodefs'), 'sync read: buy milk | script done, the file work is still running | callback read: 30 chars | now 3 todos | caught ENOENT');
+    chk2('lesson nodehttp output (same order as real Node)', lvCode('nodehttp'), 'server got POST /todos | client got 201 created | server got GET /todos | client got 2 todos | server got GET /nope | client got 404');
+    chk2('lesson mutationobs output (same order as a real browser)', lvCode('mutationobs'), 'script done | observer saw 2 changes |  - childList |  - attributes class | promise callback');
+    chk2('lesson commonjs output (same as real Node)', lvCode('commonjs'), 'main starts | math.js is loading | 3.14 3 | Hello Ada, 2 + 2 = 4 | true');
+    chk2('lesson typescript output', lvCode('typescript'), 'Bob (banned) | not found');
+    chk2('lesson streams output', lvCode('streams'), 'pipeline started: chunks arrive later | 3 chunks: GET /HOME | POST /LOGIN | GET /ABOUT');
+    // ---- interview questions: engine output must match real JavaScript
+    const iv = section('🎤 Interview questions (engine output vs real JavaScript)');
+    const polluting = q => /prototype\.my/.test(q.code);
+    for (const Q of window.JS_INTERVIEW.slice().sort((a, b) => polluting(a) - polluting(b))) {
+      if (/^r(q|th)-/.test(Q.id) && Q.kind !== 'theory') continue; // React questions are checked in the React section
+      if (Q.kind === 'theory') { if (!Q.why || !Q.ask) row(iv, false, Q.id + ' (flashcard has no answer)'); continue; }
+      const e = engine(Q.code);
+      if (e.error) { row(iv, false, Q.id, e.error); continue; }
+      if (e.last.kind !== 'done') { row(iv, false, Q.id, `stopped: ${e.last.kind} ${String(e.last.msg).replace(/<[^>]+>/g, '')}`); continue; }
+      if (Q.expect) { const ok = JSON.stringify(e.lines) === JSON.stringify(Q.expect); row(iv, ok, `${Q.id} (engine vs expected, ${e.steps} steps)`, `engine: ${e.lines.join(' | ')}
+expect: ${Q.expect.join(' | ')}`); continue; }
+      const r = await real(Q.code, 700);
+      const ok = JSON.stringify(e.lines) === JSON.stringify(r);
+      row(iv, ok, `${Q.id} (${e.steps} steps)`, `engine: ${e.lines.join(' | ')}\nreal:   ${r.join(' | ')}`);
+    }
+    const ids = window.JS_INTERVIEW.map(q => q.id);
+    row(iv, new Set(ids).size === ids.length, `${ids.length} questions with unique ids`);
+
+
+    // ---- write it yourself: every exercise must have a starter that fails and a solution that passes
+    const wi = section('✍️ Write it yourself (starter fails, solution passes)');
+    const wiBad = [];
+    let wiOk = 0;
+    for (const id of Object.keys(JSWriteIt.WRITE_IT)) {
+      const q = window.JS_INTERVIEW.find(x => x.id === id);
+      if (!q) { wiBad.push(id + ': no such interview question'); continue; }
+      const c = JSWriteIt.writeItChallenge(q);
+      if (!c) { wiBad.push(id + ': could not build the exercise (function names not found?)'); continue; }
+      const blanks = (c.starter.match(/your code here/g) || []).length;
+      if (blanks < JSWriteIt.WRITE_IT[id].length) { wiBad.push(`${id}: only ${blanks} of ${JSWriteIt.WRITE_IT[id].length} functions were emptied`); continue; }
+      const st = new JSEngine.Interpreter(c.starter, { seed: 1 }).run();
+      if (st.error) { wiBad.push(id + ': starter does not parse: ' + st.error); continue; }
+      const stLines = st.trace[st.trace.length - 1].console.map(l => l.text);
+      if (JSON.stringify(stLines) === JSON.stringify(c.expectOutput)) { wiBad.push(id + ': the empty starter already passes'); continue; }
+      wiOk++;
+    }
+    row(wi, !wiBad.length, `${wiOk} exercises: starter generated, starter fails, reference output known`, wiBad.join('\n'));
+
+    // ---- snapshot cache: every step must look exactly the same with and without the cache
+    const sc = section('⚡ Snapshot cache (fast path = slow path, every step)');
+    const snapKey = s => JSON.stringify([s.heap, s.stack, s.globalMem, s.paused, s.modules, s.workers, s.threads]);
+    const cacheCheck = (label, src) => {
+      let a, b;
+      try {
+        a = new JSEngine.Interpreter(src, { seed: 3, storage: {} }).run();
+        b = new JSEngine.Interpreter(src, { seed: 3, storage: {}, noCache: true }).run();
+      } catch (e) { return { label, bad: 'crash: ' + e.message }; }
+      if (a.error || b.error) return a.error === b.error ? null : { label, bad: 'error differs' };
+      if (a.trace.length !== b.trace.length) return { label, bad: `steps ${a.trace.length} vs ${b.trace.length}` };
+      for (let i = 0; i < a.trace.length; i++) {
+        if (snapKey(a.trace[i]) !== snapKey(b.trace[i])) return { label, bad: `first difference at step ${i + 1}` };
+      }
+      return null;
+    };
+    const cacheProgs = [
+      ['mutate after display', 'const o = { a: 1 }; const list = [o]; o.a = 2; list[0].a = 3; console.log(list[0].a);'],
+      ['array writes by index and length', 'const arr = [1, 2]; arr[1] = 5; arr.length = 1; arr.push(9); arr.sort(); arr.reverse(); console.log(arr.join());'],
+      ['nested child change', 'const a = { child: { x: 1, list: [1] } }; a.child.x = 7; a.child.list.push(2); a.child = { y: 1 }; console.log(a.child.y);'],
+      ['Map and Set', 'const m = new Map(); m.set("k", 1); m.set("k", { v: 2 }); m.get("k").v = 3; const s = new Set([1]); s.add({}); s.delete(1); console.log(m.size, s.size);'],
+      ['promises inside objects', 'const box = { p: new Promise(r => setTimeout(() => r(5), 10)) }; box.p.then(v => { box.v = v; });'],
+      ['prototype and class changes', 'class A { m() { return 1; } } const x = new A(); A.prototype.m = function () { return 2; }; Object.setPrototypeOf(x, {}); Object.freeze(x); console.log(typeof x.m);'],
+    ];
+    const misses = [];
+    for (const [label, src] of cacheProgs) { const r = cacheCheck(label, src); if (r) misses.push(r); else row(sc, true, label); }
+    misses.forEach(m => row(sc, false, m.label, m.bad));
+    let checked = 0;
+    const bigMisses = [];
+    for (const L of window.JS_LEVELS) { checked++; const r = cacheCheck('lesson ' + L.id, L.code); if (r) bigMisses.push(r); }
+    for (const Q of window.JS_INTERVIEW) { if (Q.kind === 'theory') continue; checked++; const r = cacheCheck('interview ' + Q.id, Q.code); if (r) bigMisses.push(r); }
+    row(sc, !bigMisses.length, `${checked} lessons and interview programs: identical snapshots at every step`, bigMisses.map(m => m.label + ': ' + m.bad).join('\n'));
+
+    // ---- 3) challenges: the sample solution must pass, the starter code must not
+    const ch = section('🏋️ Challenges (solution passes, starter fails)');
+    const check = (c, code) => {
+      const problems = [];
+      (c.mustUse || []).forEach(m => { if (!m.re.test(code)) problems.push('missing: ' + m.msg); });
+      (c.mustNotUse || []).forEach(m => { if (m.re.test(code)) problems.push('forbidden: ' + m.msg); });
+      const base = engine(code);
+      if (base.error) return [base.error];
+      if (c.expectOutput && base.lines.join('\n') !== c.expectOutput.join('\n')) problems.push('output: ' + base.lines.join(' | '));
+      (c.tests || []).forEach(t => {
+        const r = engine(code + '\n;' + t.run);
+        const got = r.error || r.lines.slice(base.lines.length).join('\n');
+        if (got !== t.expect) problems.push(`${t.run} → ${got}`);
+      });
+      return problems;
+    };
+    for (const c of window.JS_CHALLENGES) {
+      const good = check(c, c.solution);
+      row(ch, !good.length, `${c.id}: solution passes`, good.join('\n'));
+      row(ch, check(c, c.starter).length > 0, `${c.id}: starter code does not pass yet`);
+    }
+
+    // ---- React (ReactLite inside the engine): output must match real React 18
+    const rs = section('⚛️ React internals');
+    const rx = (label, code, expect, test, opts) => {
+      let r; try { r = engineWith(code, opts || {}); } catch (e) { row(rs, false, label, String(e && e.stack || e)); return; }
+      const got = r.lines.join(' | ');
+      let extra = '';
+      const ok = got === expect && r.last.kind === 'done' && (!test || (extra = test(r.it.trace, r)) === true);
+      row(rs, ok, label, `engine: ${got}\nexpect: ${expect}\nlast: ${r.last.kind} ${r.last.msg || ''}\n${extra || ''}`);
+    };
+    const html = 'console.log(document.getElementById("root").innerHTML)';
+    const kinds = (trace, kind) => trace.filter(t => t.kind === 'react' && t.msg.includes(kind)).length;
+    rx('JSX + first render: DOM, render log, effect after commit',
+      `function Hello({ name }) {\n  console.log("render", name);\n  React.useEffect(() => console.log("effect"));\n  return <h1 className="t">Hi {name}!</h1>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<Hello name="Ada" />);\nsetTimeout(() => ${html}, 50);`,
+      'render Ada | effect | <h1 class="t">Hi Ada!</h1>');
+    rx('batching: two setState calls in one click → one render',
+      `function C() {\n  const [n, setN] = React.useState(0);\n  console.log("render", n);\n  return <button id="b" onClick={() => { setN(n + 1); setN(n + 1); setN(x => x + 10); }}>{n}</button>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<C />);\nsimulateClick("#b", 10);\nsetTimeout(() => ${html}, 50);`,
+      'render 0 | render 11 | <button id="b">11</button>',
+      t => kinds(t, 'Render phase') === 2 || 'expected 2 renders');
+    rx('state is a snapshot: the handler still sees the old value',
+      `function C() {\n  const [n, setN] = React.useState(0);\n  return <button id="b" onClick={() => { setN(n + 1); console.log("in handler", n); }}>{n}</button>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<C />);\nsimulateClick("#b", 10);\nsetTimeout(() => ${html}, 50);`,
+      'in handler 0 | <button id="b">1</button>');
+    rx('same state → eager bailout, no render',
+      `function C() {\n  const [n, setN] = React.useState(5);\n  console.log("render");\n  return <button id="b" onClick={() => setN(5)}>{n}</button>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<C />);\nsimulateClick("#b", 10);`,
+      'render', t => kinds(t, 'Bail out early') === 1 || 'no eager bailout step');
+    rx('effects: layout before paint, children first, cleanup before the next effect',
+      `function Child({ n }) {\n  React.useLayoutEffect(() => { console.log("layout child", n); return () => console.log("layout cleanup child", n); });\n  React.useEffect(() => { console.log("effect child", n); return () => console.log("cleanup child", n); }, [n]);\n  return <i>{n}</i>;\n}\nfunction P() {\n  const [n, setN] = React.useState(0);\n  React.useEffect(() => { console.log("effect parent"); }, []);\n  return <div id="p" onClick={() => setN(n + 1)}><Child n={n} /></div>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<P />);\nsimulateClick("#p", 10);`,
+      'layout child 0 | effect child 0 | effect parent | layout cleanup child 0 | layout child 1 | cleanup child 0 | effect child 1');
+    rx('keys: reorder keeps DOM nodes (moves, no re-creation)',
+      `function L() {\n  const [xs, setXs] = React.useState(["a", "b", "c"]);\n  return <ul id="u" onClick={() => setXs(["c", "a", "b"])}>{xs.map(x => <li key={x}>{x}</li>)}</ul>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<L />);\nlet first;\nsetTimeout(() => { first = document.querySelector("li"); }, 5);\nsimulateClick("#u", 10);\nsetTimeout(() => { const lis = document.querySelectorAll("li"); console.log(lis[1] === first, ${html.slice(12, -1)}); }, 50);`,
+      'true <ul id="u"><li>c</li><li>a</li><li>b</li></ul>',
+      t => t.some(s => s.kind === 'react' && /<b>keep<\/b> <code>&lt;li&gt; key=c<\/code>, <b>move<\/b>/.test(s.msg)) || 'no keep/move step');
+    rx('index keys: state stays with the position, not the item',
+      `function Item({ label }) { const [v] = React.useState(label); return <li>{label}:{v}</li>; }\nfunction L() {\n  const [xs, setXs] = React.useState(["a", "b"]);\n  return <ul id="u" onClick={() => setXs(["b"])}>{xs.map((x, i) => <Item key={i} label={x} />)}</ul>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<L />);\nsimulateClick("#u", 10);\nsetTimeout(() => ${html}, 50);`,
+      '<ul id="u"><li>b:a</li></ul>');
+    rx('different type at the same place: old subtree unmounted, state lost',
+      `function Counter() { const [n, setN] = React.useState(0); React.useEffect(() => () => console.log("unmount"), []); return <b id="c" onClick={() => setN(n + 1)}>{n}</b>; }\nfunction App() {\n  const [div, setDiv] = React.useState(true);\n  return <main>{div ? <div><Counter /></div> : <section><Counter /></section>}<button id="t" onClick={() => setDiv(!div)}>t</button></main>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<App />);\nsimulateClick("#c", 10);\nsimulateClick("#t", 20);\nsetTimeout(() => ${html}, 50);`,
+      'unmount | <main><section><b id="c">0</b></section><button id="t">t</button></main>');
+    rx('memo skips a child with equal props; context still reaches readers',
+      `const Theme = React.createContext("light");\nconst Child = React.memo(function Child({ label }) { console.log("Child"); return <span>{label}</span>; });\nfunction Reader() { const t = React.useContext(Theme); console.log("Reader", t); return <i>{t}</i>; }\nconst Mid = React.memo(function Mid() { console.log("Mid"); return <Reader />; });\nfunction App() {\n  const [theme, setTheme] = React.useState("light");\n  const [n, setN] = React.useState(0);\n  return <Theme.Provider value={theme}><button id="a" onClick={() => setN(n + 1)}>{n}</button><button id="b" onClick={() => setTheme("dark")}>t</button><Child label="x" /><Mid /></Theme.Provider>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<App />);\nsimulateClick("#a", 10);\nsimulateClick("#b", 20);`,
+      'Child | Mid | Reader light | Reader dark');
+    rx('useMemo / useCallback / useRef keep values between renders',
+      `function C() {\n  const [n, setN] = React.useState(0);\n  const renders = React.useRef(0);\n  renders.current++;\n  const big = React.useMemo(() => { console.log("compute"); return 42; }, []);\n  const cb = React.useCallback(() => n, [n]);\n  const prev = React.useRef(cb);\n  console.log(renders.current, big, prev.current === cb);\n  prev.current = cb;\n  return <button id="b" onClick={() => setN(1)}>{n}</button>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<C />);\nsimulateClick("#b", 10);`,
+      'compute | 1 42 true | 2 42 false');
+    rx('useReducer + controlled input',
+      `function reducer(s, a) { return a.type === "set" ? { ...s, text: a.text } : s; }\nfunction F() {\n  const [s, dispatch] = React.useReducer(reducer, { text: "" });\n  return <div><input id="i" value={s.text} onChange={e => dispatch({ type: "set", text: e.target.value.toUpperCase() })} /><p>{s.text}</p></div>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<F />);\nsimulateTyping("#i", "hey", 10);\nsetTimeout(() => console.log(document.getElementById("i").value, document.querySelector("p").textContent), 50);`,
+      'HEY HEY');
+    rx('event delegation: one root listener, bubbling through React handlers, stopPropagation',
+      `function A() {\n  return <div onClick={() => console.log("div")}><p onClick={e => { console.log("p"); }}><button id="b" onClick={e => { console.log("button"); }}>x</button></p><span id="s" onClick={e => { console.log("span"); e.stopPropagation(); }}>y</span></div>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<A />);\nsimulateClick("#b", 10);\nsimulateClick("#s", 20);`,
+      'button | p | div | span');
+    rx('transition: urgent update first, then the slow list (time-sliced, interrupted by typing)',
+      `function App() {\n  const [q, setQ] = React.useState("");\n  const [list, setList] = React.useState([]);\n  const [pending, start] = React.useTransition();\n  return <div><input id="q" value={q} onChange={e => { setQ(e.target.value); start(() => setList([1, 2, 3, 4, 5, 6].map(i => e.target.value + i))); }} /><p>{pending ? "…" : "ok"}</p><ul>{list.map(x => <li key={x}>{x}</li>)}</ul></div>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<App />);\nsimulateTyping("#q", "a", 10);\nsimulateTyping("#q", "ab", 13);\nsetTimeout(() => console.log(document.querySelectorAll("li").length, document.querySelector("li").textContent, document.querySelector("p").textContent), 200);`,
+      '6 ab1 ok', t => (kinds(t, 'Interrupted') === 1 && kinds(t, 'Time slice used up') >= 3) || 'expected an interrupt and time slices');
+    rx('flushSync renders immediately',
+      `function C({ n }) { return <b>{n}</b>; }\nconst root = ReactDOM.createRoot(document.getElementById("root"));\nReactDOM.flushSync(() => root.render(<C n={1} />));\nconsole.log(document.getElementById("root").innerHTML);`,
+      '<b>1</b>');
+    rx('hooks in a condition → React error',
+      `function C() {\n  const [n, setN] = React.useState(0);\n  if (n === 0) React.useState("x");\n  return <button id="b" onClick={() => setN(1)}>{n}</button>;\n}\nReactDOM.createRoot(document.getElementById("root")).render(<C />);\nsimulateClick("#b", 10);`,
+      'Uncaught Error: Rendered fewer hooks than expected. This may be caused by an accidental early return statement.', null);
+    rx('import from "react" / "react-dom/client" and fragments',
+      `import React, { useState } from "react";\nimport { createRoot } from "react-dom/client";\nfunction A() { const [x] = useState("f"); return <><b>{x}</b><i>2</i></>; }\ncreateRoot(document.getElementById("root")).render(<A />);\nsetTimeout(() => ${html}, 20);`,
+      '<b>f</b><i>2</i>');
+    (() => {
+      // collapsed mode hides React's own lines; deep mode shows them (ext = ReactLite source)
+      const code = `function A() { return <p>hi</p>; }\nReactDOM.createRoot(document.getElementById("root")).render(<A />);`;
+      const a = new JSEngine.Interpreter(code, {}).run().trace, b = new JSEngine.Interpreter(code, { deepReact: true }).run().trace;
+      row(rs, b.length > a.length * 3 && a.every(s => s.kind === 'react' || !s.ext || s.kind === 'push' || s.kind === 'pop' || s.kind === 'eventloop' || s.kind === 'queue'), `collapsed mode: ${a.length} steps; deep mode: ${b.length} steps`);
+      const s = a.find(t => t.kind === 'assign' || t.line === 1);
+      row(rs, a.filter(t => t.line != null).every(t => t.line <= 2), 'JSX steps point at the right lines of your code');
+      const last = a.filter(t => t.react).pop();
+      const tree = last && last.react.roots[0].current;
+      row(rs, !!tree && tree.name === 'Root' && tree.kids[0].name === 'A' && tree.kids[0].kids[0].name === '<p>', 'snapshot has the fiber tree (Root → A → <p>)', JSON.stringify(tree).slice(0, 300));
+      const heapHasFiber = last.heap.some(o => (o.entries || []).some(e => ['alternate', 'memoizedState', 'pendingProps', '$$typeof'].includes(e.k)));
+      row(rs, !heapHasFiber, 'React\'s fibers stay out of the Heap panel in collapsed mode');
+      const err = new JSEngine.Interpreter('function A() {\n  return <div><span></div>;\n}', {}).run();
+      row(rs, !!err.error && err.errorLine === 2, 'JSX error shows its line', err.error + ' line ' + err.errorLine);
+      const html2 = new JSEngine.Interpreter('// @file index.html\n<ul><li>x</li></ul>\n// @file main.js\nconsole.log(document.querySelector("li").textContent);', {}).run();
+      row(rs, !html2.error && html2.trace[html2.trace.length - 1].console[0].text === 'x', 'HTML sections are not treated as JSX', html2.error);
+    })();
+    (() => {
+      // scheduler and lanes data for the Inside view: time slices, yielding, interruption, the lane check
+      const lesson = window.REACT_LEVELS.find(l => l.id === 'r-transition');
+      const tr = new JSEngine.Interpreter(lesson.code, {}).run().trace;
+      const ds = tr.filter(t => t.reactDetail).map(t => t.reactDetail);
+      const y = ds.find(d => d.trace === 'yield'), res = ds.find(d => d.trace === 'resume'), int = ds.find(d => d.trace === 'interrupt');
+      row(rs, !!y && y.sched.slices >= 1 && y.sched.used === y.sched.size && (y.sched.pending & 64) !== 0, 'yield step: slice number, fibers used, Transition bit pending', JSON.stringify(y && y.sched));
+      row(rs, !!res && res.sched.slices >= 1, 'resume step knows which slice it continues', JSON.stringify(res && res.sched));
+      row(rs, !!int && int.sched.from === 'Transition' && int.sched.lane === 'Sync' && (int.sched.pending & 65) === 65, 'interrupt step: Sync interrupts Transition, both lanes pending', JSON.stringify(int && int.sched));
+      const bw = ds.filter(d => d.trace === 'beginWork' && d.bits);
+      const sliced = bw.filter(d => d.bits.slices > 0);
+      row(rs, bw.length > 5 && sliced.length > 0 && sliced.every(d => d.bits.slice >= 1 && d.bits.slice <= d.bits.size && d.bits.renderLanes === 64), 'beginWork carries the lane bits and its place in the time slice', JSON.stringify(sliced.slice(0, 2)));
+      // the lane check matches what React decided
+      const sub = ds.filter(d => d.trace === 'bailoutSubtree'), cl = ds.filter(d => d.trace === 'bailout');
+      const okSub = sub.every(d => !(d.bits.lanes & d.bits.renderLanes) && !(d.bits.childLanes & d.bits.renderLanes));
+      const okClone = cl.every(d => !(d.bits.lanes & d.bits.renderLanes) && (d.bits.childLanes & d.bits.renderLanes));
+      const st = new JSEngine.Interpreter(window.REACT_LEVELS.find(l => l.id === 'r-state').code, {}).run().trace.filter(t => t.reactDetail).map(t => t.reactDetail);
+      const own = st.filter(d => d.trace === 'beginWork' && d.reason === 'state').every(d => d.bits.lanes & d.bits.renderLanes);
+      row(rs, okSub && okClone && own && cl.length + st.filter(d => d.trace === 'bailout').length > 0, 'lane check: skip = no bits, clone = only childLanes, state render = own lane bit', `skip ${okSub} clone ${okClone} own ${own}`);
+      const every = ds.concat(st).every(d => typeof d.trace === 'string');
+      row(rs, every, 'every React step records which trace (real React function) it is');
+      // the list diff: moving a to the end moves 1 item; moving it back to the front moves the 3 others
+      const ld = new JSEngine.Interpreter(window.REACT_LEVELS.find(l => l.id === 'r-listdiff').code, {}).run().trace
+        .filter(t => t.reactDetail && t.reactDetail.trace === 'reconciled' && t.reactDetail.diff.some(x => /<li>/.test(x.name))).map(t => t.reactDetail.diff);
+      const moves = ld.map(d => d.filter(x => x.decision === 'move').map(x => x.name.slice(-1)).join(''));
+      row(rs, moves.length === 2 && moves[0] === 'a' && moves[1] === 'bcd' && ld.every(d => d.every(x => x.pass === '2')), 'list diff (lastPlacedIndex): a to the end moves "a"; back to the front moves "bcd"', JSON.stringify(moves));
+      // useDebugValue: the label shows in the hooks list (like React DevTools)
+      const dv = new JSEngine.Interpreter(window.REACT_LEVELS.find(l => l.id === 'r-devtools').code, {}).run().trace.filter(t => t.react).pop();
+      const bar = dv && dv.react.roots[0].current.kids[0];
+      row(rs, !!bar && bar.hooks.some(h => h.name === 'useDebugValue' && /Offline/.test(h.value)), 'useDebugValue label appears in the hooks list', JSON.stringify(bar && bar.hooks));
+      // Activity pre-render: rendered at the Offscreen lane (bit 29), effects only after it becomes visible
+      const pr = new JSEngine.Interpreter(window.REACT_LEVELS.find(l => l.id === 'r-prerender').code, {}).run().trace.filter(t => t.reactDetail).map(t => t.reactDetail);
+      const lanes = pr.filter(d => d.trace === 'renderStart').map(d => d.sched.lane);
+      const order = pr.map(d => d.trace).filter(k => k === 'prerender' || k === 'activityShow' || k === 'effectRun');
+      row(rs, lanes.includes('Offscreen') && order.indexOf('prerender') < order.indexOf('activityShow') && order.indexOf('effectRun') > order.indexOf('activityShow'), 'Activity pre-render: an Offscreen-lane render, effects only after showing', JSON.stringify({ lanes, order }));
+      // context change: the walk visits the subtree and marks the readers
+      const cx = new JSEngine.Interpreter(window.REACT_LEVELS.find(l => l.id === 'r-context').code, {}).run().trace.filter(t => t.reactDetail && t.reactDetail.kind === 'context').map(t => t.reactDetail);
+      row(rs, cx.length > 0 && cx[0].walk.length > 1 && cx[0].walk.some(w => w.reads) && cx[0].walk.some(w => !w.reads), 'context change: the walk visits fibers and marks the readers', JSON.stringify(cx[0] && cx[0].walk));
+      // selective hydration: dehydrated first, the early click hydrates that boundary before the click runs
+      const sh = new JSEngine.Interpreter(window.REACT_LEVELS.find(l => l.id === 'r-selectivehydration').code, {}).run().trace.filter(t => t.reactDetail).map(t => t.reactDetail.trace);
+      const at = k => sh.indexOf(k);
+      row(rs, at('dehydrated') >= 0 && at('dehydrated') < at('hydrateEnd') && at('selectiveHydration') > at('hydrateEnd') && at('hydrateBoundary') > at('selectiveHydration') && sh.indexOf('event', at('hydrateBoundary')) > at('hydrateBoundary'), 'selective hydration: dehydrate, hydrate the clicked boundary first, then replay the click', sh.filter(k => /hydr|selective|event/.test(k)).join(', '));
+      // ready-made compare pairs: every edit matches its concept, and version B really behaves differently
+      const bad = [];
+      Object.entries(window.REACT_PAIRS).forEach(([id, pair]) => {
+        const l = window.REACT_LEVELS.find(x => x.id === id);
+        const b = l && window.REACT_PAIRS_APPLY(l.code, pair);
+        if (!b) { bad.push(id + ': edit does not match'); return; }
+        const out = src => { const tr = new JSEngine.Interpreter(src, {}).run().trace; return JSON.stringify([tr[tr.length - 1].console.map(c => c.text), tr.filter(t => t.reactDetail).map(t => t.reactDetail.trace)]); };
+        if (out(l.code) === out(b)) bad.push(id + ': both versions behave the same');
+      });
+      row(rs, !bad.length, `compare pairs: all ${Object.keys(window.REACT_PAIRS).length} apply and change the behaviour`, bad.join('\n'));
+    })();
+
+    // every React lesson prints what its lesson and quiz say (same as React 18)
+    const RLV = {
+      'r-jsx': "h1 title | ['Hello ', 'Ada'] | 2 1", 'r-firstrender': 'render() returned | render Greeting', 'r-fiber': '',
+      'r-state': 'render with count = 0 | render with count = 1 | render with count = 2', 'r-batching': 'render 0 0 | handler done | render 2 1',
+      'r-updater': '1 3', 'r-reconcile': 'Counter unmounted | count 0', 'r-keys': 'true 4', 'r-indexkeys': 'Linus: note for Ada',
+      'r-props': 'render Parent 0 | render Child same | render Parent 1 | render Child same', 'r-memo': 'render Child | render Child | render Child',
+      'r-context': 'render Panel | render Label light | render Label dark',
+      'r-hookslist': 'Ada 36 | Bob only sometimes | Uncaught Error: Rendered fewer hooks than expected. This may be caused by an accidental early return statement.',
+      'r-effect': 'render 0 0 | effect: count is 0 | render 1 0 | effect: count is 1 | render 1 1', 'r-cleanup': 'subscribe Paris | unsubscribe Paris | subscribe Tokyo | unsubscribe Tokyo',
+      'r-layout': 'render | layout effect (before paint) | after flushSync | effect (after paint) | microtask | timeout', 'r-ref': 'renders: 1 box: INPUT | renders: 2 box: INPUT',
+      'r-memohooks': 'computing 3 | computing 4', 'r-reducer': 'items: none | items: tea,cake | items: none', 'r-stale': 'timer sees count = 0 | final: 11',
+      'r-controlled': 'ADA | Hello, ADA', 'r-lifting': '212 °F', 'r-lanes': 'render 0 | render 1 | microtask after click | timer: render scheduled | render 1',
+      'r-transition': '6 ab1', 'r-events': 'button a | div | native listener on root | button b | native listener on root', 'r-commit': '2',
+      'r-flushsync': 'without flushSync: 1 | with flushSync: 3', 'r-unmount': 'mount | unmount | mount | clicked 0', 'r-customhook': 'ON off', 'r-todo': '0 left | Learn fibers✕',
+      'r-class': '1. constructor | 2. render 0 | 3. componentDidMount | 2. render 1 | componentDidUpdate: 0 -> 1 | componentWillUnmount',
+      'r-classstate': 'render Ada 36 | Badge render | right after setState: 36 | render Ada 38 | callback sees 38',
+      'r-boundary': 'logged: negative price | break itSomething went wrong: negative pricethe rest of the page still works',
+      'r-suspense': '<p>Loading…</p> | <h2>Hello Ada</h2>', 'r-lazy': 'show chartloading chart code… | show chart📈 chart',
+      'r-suspensetransition': '60ms: 📄 home page | idle | 80ms: ⏳ fallback | idle | 130ms: 📄 about page | idle | 150ms: 📄 about page | loading… | 200ms: 📄 blog page | idle',
+      'r-portal': 'clicks seen by App: 1 | <div class="modal"><button id="ok">OK</button></div>',
+      'r-strict': 'render Chat | render Chat | connect → open connections: 1 | disconnect → open connections: 0 | connect → open connections: 1 | final open connections: 1',
+      'r-forwardref': 'read: hello | after clear: ""', 'r-syncstore': '🛒 2 🛒 2 ',
+      'r-deferred': 'Search renders: text = "" deferred = "" | SlowList renders for "" | Search renders: text = "a" deferred = "" | Search renders: text = "a" deferred = "a" | SlowList renders for "a"',
+      'r-children': 'A[B]Cmouse at 3,4 3', 'r-optimistic': 'render: likes = 10 shown = 10  | render: likes = 10 shown = 11 (pending) | render: likes = 11 shown = 11 ',
+      'r-actionstate': 'result: - | pending… | result: invalid email | pending… | result: subscribed ada@example.com',
+      'r-warnings': 'Warning: Each child in a list should have a unique "key" prop. Check the render method of `List`. | effect ran | Warning: An effect function must not return anything besides a function, which is used for clean-up. It looks like you wrote useEffect(async () => ...) or returned a Promise. Instead, write the async function inside your effect and call it immediately. | Uncaught Error: Objects are not valid as a React child (found: object with keys {name}). If you meant to render a collection of children, use an array instead.',
+      'r-patterns': '3 items | 3 items: {"tea":2,"cake":1}',
+      'r-ssr': 'server HTML: <div id="box"><p>Count: <!-- -->5</p><button id="b">+1</button></div> | effect: runs only in the browser | same DOM node: true | now: Count: 6+1',
+      'r-hydration': 'Warning: Text content did not match. Server: "server" Client: "client" | Error: Hydration failed because the initial UI does not match what was rendered on the server. React throws the server HTML away and renders the whole root on the client. | Rendered on the client | Fixed: rendered on the client',
+      'r-rsc': '1:I["LikeButton"]\n2:F{"id":"likePost"}\n0:["$","ul",null,{"children":[["$","li","1",{"children":["Hello RSC"," ",["$","$L1",null,{"id":1,"onLike":"$F2"}]]}],["$","li","2",{"children":["Server first"," ",["$","$L1",null,{"id":2,"onLike":"$F2"}]]}]]}] | Hello RSC ❤️ Server first ❤️ liked 2 (1 total)',
+      'r-forms': 'render: not saved | render: ada@example.com + newsletter | input after the action: ""',
+      'r-router': '/users/42 | User 42',
+      'r-store': 'CartCount renders 0 | UserName renders Ada | CartCount renders 1 | UserName renders Grace',
+      'r-query': 'User 1 User 1 error: not found | requests: 2',
+      'r-testing': '✓ starts at 0 | ✓ clicking increments | ✗ a failing test shows a clear message → Unable to find an element with the text: Count: 99',
+      'r-typescript': 'typed: hi | ✓ Type the props ',
+      'r-virtual': 'rendering rows 0 to 4 of 10000 | rendering rows 5000 to 5004 of 10000 | DOM rows: 5 | first: Row 5000',
+      'r-commitphases': '1 before mutation: old text 0 | 2 mutation: useInsertionEffect, new text 1 | 3 layout: componentDidUpdate | 3 layout: useLayoutEffect, ref b | 4 passive: useEffect',
+      'r-useid': ':r0: :r1:',
+      'r-activity': 'effect: start | cleanup: stop | hidden: display = none | effect: start | visible again: count 1',
+      'r-effectevent': 'connect general | connected to general (theme: dark)',
+      'r-immutable': 'render Ada admin | render Bob admin,dev',
+      'r-resetstate': 'Bob: 1 / Bob: 0',
+      'r-derived': 'effect version renders, count = 0 | derived version renders, count = 3 | effect version renders, count = 3',
+      'r-race': 'ignored stale user a | shown: user b',
+      'r-uncontrolled': 'saved: Grace | input still shows: Grace',
+      'r-hoc': 'render Hello with {"name":"Ada"} | <b>Hello Ada</b>',
+      'r-ref19': 'attached box | inputRef points to the input: name | cleanup',
+      'r-context19': '<b>dark</b><p>panel dark</p>',
+      'r-metadata': 'title in <head>: true | meta in <head>: true | body: <article><h1>Hello React 19</h1></article>',
+      'r-profiler': 'list mount - rendered 4 of 4 components | list update - rendered 1 of 4 components',
+      'r-compiler': 'computing total | shown: 6',
+      'r-streaming': 'shell ready | chunk: <main><h1>Blog post</h1><!--$?--><template id="B:0"></template><p>Loading comments…</p><!--/$--></main> | chunk: <div hidden id="S:0"><ul><li>Ada</li><li>Grace</li></ul></div><script>$RC("B:0","S:0")<\/script> | end',
+      'r-boundarylimits': 'handler errors are yours to catch: click crash | caught: render crash',
+      'r-listdiff': 'order: bcda / same DOM nodes: true | order: abcd',
+      'r-prerender': 'render App | render Details | before opening: in the DOM true | display none | render App | render Details | Details effect',
+      'r-rooterrors': 'caught by a boundary: broken widget | boundary: Boundary | not caught: broken widget -> the app was removed | page: ""',
+      'r-devtools': '❌ offline',
+      'r-selectivehydration': 'likes 1',
+      'r-resources': 'preconnect https://cdn.example.com | preload https://cdn.example.com/font.woff2 | stylesheet /base.css | stylesheet /card.css',
+      'r-cache': 'database queries: 1 | 0:["$","div",null,{"children":[["$","img",null,{"alt":"Ada"}],["$","b",null,{"children":"Ada"}]]}]',
+      'r-static': 'renderToString: <main><h1>Blog</h1><!--$!--><p>Loading…</p><!--/$--></main> | prerender: <main><h1>Blog</h1><!--$--><ul><li>Hello</li><li>World</li></ul><!--/$--></main>',
+      'r-formreset': 'saved: buy milk | field now: ""',
+      'r-overview': 'render, count = 0 | effect: count is 0 | render, count = 1 | effect: count is 1',
+    };
+    window.REACT_LEVELS.forEach(l => {
+      let r; try { r = engineWith(l.code, {}); } catch (e) { row(rs, false, 'React lesson ' + l.id, String(e && e.stack || e)); return; }
+      const got = r.lines.join(' | ');
+      const okEnd = r.last.kind === 'done' || (l.id === 'r-hookslist' && r.lines.length === 3);
+      row(rs, got === RLV[l.id] && okEnd && !r.it.trace.some(t => t.kind === 'error' && /internal error|visualizer/.test(t.msg)), `React lesson ${l.id} output`, `engine: ${got}\nexpect: ${RLV[l.id]}\nlast: ${r.last.kind}`);
+    });
+    row(rs, window.REACT_LEVELS.length === 83 && window.REACT_LEVELS.every(l => window.JS_LESSONS[l.id] && window.JS_LESSONS[l.id].quiz), '83 React levels, each with a lesson and a quiz');
+
+    // React interview questions: outputs checked against React 18
+    const RIV = { "rq-render-order": "render Parent | render A | render B | effect A | effect B | effect Parent", "rq-render-sync": "after render() | microtask | App renders", "rq-element-identity": "Child renders", "rq-children-prop": "Counter renders 0 | Slow renders | Counter renders 1", "rq-component-inside": "typed 0 | typed 1", "rq-return-null": "effect runs, show = false", "rq-falsy-render": "\"0\"", "rq-fragments": "<dt>a</dt><dd>1</dd><dt>b</dt><dd>2</dd>", "rq-snapshot": "in handler: 0 | in timeout: 0 | on screen: 5", "rq-triple-set": "1", "rq-mixed-updates": "84", "rq-batch-timeout": "render 0 0 | render 1 1", "rq-same-value": "render | render", "rq-mutate-state": "1", "rq-lazy-init": "expensive | expensive | expensive", "rq-derived-state": "first", "rq-key-reset": "<p>draft of ada</p><p>draft of bob</p>", "rq-index-key-input": "Cy: Ada's note | Ada: Bob's note | Bob: Bob's note", "rq-keys-moves": "", "rq-type-change": "1", "rq-conditional-position": "1", "rq-hooks-order": "name = Ada | name = extra | Uncaught Error: Rendered fewer hooks than expected. This may be caused by an accidental early return statement.", "rq-useref-render": "ref is 1 | ref is 2 | screen: 0", "rq-usememo-deps": "sorting | sorting | sorting", "rq-usecallback-identity": "false true false 0", "rq-usereducer-bail": "render 0 | render 0 | render 1", "rq-custom-hook-state": "2 0", "rq-use-previous": "now 1 before undefined | now 10 before 1 | now 100 before 10", "rq-effect-deps-order": "render 0 | effect 0 | render 1 | cleanup 0 | effect 1", "rq-effect-no-deps": "every render | only on mount | when n changes | every render | when n changes", "rq-effect-loop": "render 0 | render 1 | render 2 | render 3", "rq-stale-interval": "1", "rq-fetch-race": "user 2", "rq-layout-vs-effect": "useLayoutEffect | microtask from layout | useEffect", "rq-unmount-cleanup": "connect | disconnect", "rq-memo-object-prop": "Card renders | Card renders", "rq-memo-custom-compare": "Price renders 1.1 | Price renders 1.5", "rq-context-rerender": "Reader renders | Reader renders", "rq-state-colocation": "Big renders", "rq-context-default": "HelloBonjour", "rq-context-nearest": "dark blue dark ", "rq-event-order": "button | section | div", "rq-stop-propagation": "inner", "rq-controlled-transform": "123", "rq-form-submit": "{\"name\":\"\",\"city\":\"\"}", "rq-transition-pending": "loading home | posts", "rq-transition-vs-sync": "render \"\" 0 | render \"x\" 0 | render \"x\" 8", "rq-flushsync-dom": "before: 1 | after flushSync: 3", "rq-bug-missing-key": "☑ eggs", "rq-bug-object-deps": "subscribe react | unsubscribe react | subscribe react", "rq-bug-async-setstate": "timer cleared | end", "rq-impl-create-element": "<ul class=\"list\"><li>a</li><li>b</li></ul>", "rq-impl-usestate": "2 15", "rq-impl-shallow-equal": "true false true false", "rq-impl-use-toggle": "ON", "rq-impl-use-debounce": "search for react", "rq-impl-use-local-storage": "[\"read\",\"code\"]", "rq-impl-use-fetch": "/ok loading | /missing loading | /ok loading | /missing loading | /ok got Ada | /missing error 404", "rq-impl-reducer-store": "changed to 1 | changed to 2 | final 3", "rq-impl-keyed-diff": "keep c, move a, move b, create d | keep b, keep c, keep d, move a", "rq-cls-order": "parent render | child render | child didMount | parent didMount", "rq-cls-merge": "hooks: {\"a\":1,\"b\":2} | class: {\"a\":10,\"b\":2} | hooks: {\"a\":10}", "rq-cls-this": "Uncaught TypeError: Cannot read properties of undefined (reading 'setState') | 1", "rq-cls-scu": "state: 1 | state: 2 | screen: 0", "rq-cls-gdsfp": "bob@x.com", "rq-cls-snapshot": "items before: 2 after: 4", "rq-err-boundary-scope": "handler: caught with try/catch | boundary caught it", "rq-err-no-boundary": "Uncaught Error: oops | page: \"\"", "rq-err-nested": "titleinner caught it", "rq-suspense-nested": "loading page | Post textloading comments | Post text3 comments", "rq-suspense-unstable-promise": "loading | renders: many", "rq-suspense-hides": "2 none | 2 \"\"", "rq-ref-timing": "render: null | layout effect: INPUT | effect: INPUT", "rq-callback-ref": "ref called with P | ref called with null", "rq-portal-context": "modal theme: dark | inside root: true", "rq-use-id": ":r0: :r1:", "rq-imperative-handle": "undefined | ▶ playing", "rq-strict-double": "render | render | effect | cleanup | effect", "rq-sync-store-tearing": "Count renders 0 | Count renders 1", "rq-r19-use-context": "fancy darkplain", "rq-r19-optimistic-revert": "milk | milk, eggs (saving…) | failed: offline | milk", "rq-r19-action-pending": "isPending: false done: false | isPending: true done: false | isPending: false done: true", "rq-deferred-vs-transition": "List renders for \"\" | List renders for \"r\"", "rq-transition-interrupt-order": "Slow renders  | Slow renders a | Slow renders ab", "rq-tricky-effect-closure": "cleanup for 1 | cleanup for 2", "rq-tricky-setstate-in-render": "Uncaught Error: Too many re-renders. React limits the number of renders to prevent an infinite loop.", "rq-tricky-key-remount": "mount | unmount | mount | unmount | mount", "rq-tricky-batch-promise": "render 0 0 | render 1 0 | render 1 1", "rq-tricky-object-is": "render | render", "rq-tricky-children-fn": "ON", "rq-tricky-default-props": "OK/none Save/blue OK/none /none", "rq-perf-split-context": "Button renders | Display renders 0 | Display renders 1", "rq-perf-list-memo": "Row renders 1 | Row renders 2 | Row renders 3 | Row renders 2", "rq-bug-onclick-call": "greet called with Ada | greet called with Ada | hi Ada", "rq-bug-stale-handler": "listener sees 0", "rq-bug-direct-mutation-class": "state is 1 | screen: 0", "rq-bug-cond-hook-early-return": "Uncaught Error: Rendered more hooks than during the previous render.", "rq-impl-error-boundary": "report: bad data | sorryfine", "rq-impl-use-interval": "3", "rq-impl-use-media-store": "🟢 online | 🔴 offline", "rq-impl-mini-memo": "rendering Ada | <b>Ada</b> | reused | <b>Ada</b> | rendering Bob | <b>Bob</b>", "rq-impl-event-delegation": "handler like | handler card", "rq-ssr-markers": "<p>Hello, <!-- -->Ada<!-- -->!</p> | <p>Hello, Ada!</p>", "rq-ssr-effects": "render | initial state | <p>1</p>", "rq-ssr-suspense": "<article><h1>Post</h1><!--$!--><i>loading comments</i><!--/$--></article>", "rq-hydrate-reuse": "before hydration: 0 | after: true 1", "rq-hydrate-mismatch": "Warning: Text content did not match. Server: \"server time\" Client: \"client time\" | Error: Hydration failed because the initial UI does not match what was rendered on the server. React throws the server HTML away and renders the whole root on the client. | client time", "rq-forms-status": "idle pending save | idle idle save", "rq-forms-formdata": "{\"user\":\"ada\",\"remember\":\"on\"}", "rq-forms-controlled-switch": "Warning: You provided a `value` prop to a form field without an `onChange` handler. This will render a read-only field. If the field should be mutable use `defaultValue`. Otherwise, set either `onChange` or `readOnly`. | fixed freeXYZ", "rq-eco-selector-store": "Theme renders light | User renders Ada | Everything renders | Theme renders dark | Everything renders", "rq-eco-query-dedupe": "ADA ADA BOB  | requests: 2", "rq-eco-router-link": "About /about", "rq-ts-generic": "S[M]", "rq-impl-mini-router": "{\"id\":\"42\"} | {\"id\":\"7\",\"post\":\"hello world\"} | null {}", "rq-impl-create-store": "2 2", "rq-impl-render-to-string": "<div class=\"card\"><h2>5 &lt; 6</h2><p>body</p></div>"};
+    window.REACT_IV.filter(q => q.code).forEach(q => {
+      let r; try { r = engineWith(q.code, {}); } catch (e) { row(rs, false, 'React question ' + q.id, String(e && e.stack || e)); return; }
+      const got = r.lines.join(' | ');
+      row(rs, got === RIV[q.id], `React question ${q.id}`, `engine: ${got}\nexpect: ${RIV[q.id]}`);
+    });
+    const implIds = Object.keys(JSWriteIt.WRITE_IT).filter(k => k.startsWith('rq-'));
+    const starters = implIds.map(id => { const q = window.REACT_IV.find(x => x.id === id); const c = JSWriteIt.writeItChallenge(q); return [id, !!c && c.starter !== q.code && /your code here/.test(c.starter)]; });
+    row(rs, starters.every(s => s[1]), `"write it yourself" works for ${implIds.length} React questions (JSX code too)`, starters.filter(s => !s[1]).map(s => s[0]).join(', '));
+    row(rs, window.REACT_IV.filter(q => q.kind === 'theory').length >= 35 && window.REACT_IV.filter(q => q.code).length >= 60, `${window.REACT_IV.length} React interview questions`);
+
+    // the guided course only links to lessons, challenges and exercises that exist
+    (() => {
+      const lessonIds = new Set(window.REACT_LEVELS.map(l => l.id));
+      const missing = [];
+      window.REACT_COURSE.forEach(u => {
+        if (!u.lessons.length) missing.push(u.id + ': no lessons');
+        u.lessons.forEach(id => { if (!lessonIds.has(id)) missing.push(u.id + ': lesson ' + id); });
+        if (!u.watch) missing.push(u.id + ': what to watch for');
+      });
+      const used = new Set(window.REACT_COURSE.flatMap(u => u.lessons));
+      // one path: every React lesson is somewhere in it
+      const leftLessons = [...lessonIds].filter(id => !used.has(id));
+      row(rs, !missing.length && window.REACT_COURSE.length === 25, `guided course: ${window.REACT_COURSE.length} units, every lesson exists`, missing.join('\n'));
+      row(rs, !leftLessons.length, `one path: all ${lessonIds.size} React lessons are inside the course`, `not in the course:\n${leftLessons.join('\n')}`);
+    })();
+
+    // ---- 4) the line explainer never crashes
+    const ex = section('💡 Line explainer');
+    let explained = 0, crashes = [];
+    for (const L of window.JS_LEVELS) {
+      L.code.split('\n').forEach((_, i) => {
+        try { if (JSExplain.explainLine(L.code, i + 1)) explained++; } catch (e) { crashes.push(`${L.id}:${i + 1} ${e.message}`); }
+      });
+    }
+    row(ex, !crashes.length, `explained ${explained} lines across all levels`, crashes.join('\n'));
+
+    document.getElementById('sum').innerHTML = `<span class="${fail ? 'bad' : 'ok'}">${fail ? '✘' : '✔'} ${pass} passed, ${fail} failed</span>`;
+    document.title = (fail ? 'FAIL ' : 'PASS ') + document.title;
+  })();
+  </script>
+</body>
+</html>

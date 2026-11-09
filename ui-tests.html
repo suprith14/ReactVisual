@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JS Engine Lab — Interface tests</title>
+  <style>
+    :root { --bg: #0b0e1f; --panel: #161b36; --line: #2b3264; --text: #e8ebff; --muted: #8e96c8; --ok: #3ee6a8; --bad: #ff5d73; }
+    @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg: #f4f6fc; --panel: #fff; --line: #d6dbec; --text: #1b1f36; --muted: #5d6488; --ok: #0a8a5b; --bad: #c8243d; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; padding: 16px; }
+    h1 { font-size: 20px; margin: 0 0 4px; } p { color: var(--muted); margin: 0 0 12px; }
+    .sum { font-size: 16px; font-weight: 700; margin: 10px 0; }
+    .row { font-family: Consolas, monospace; font-size: 12.5px; padding: 2px 0; border-bottom: 1px dashed var(--line); }
+    .ok { color: var(--ok); } .bad { color: var(--bad); }
+    pre { white-space: pre-wrap; margin: 2px 0 6px 18px; color: var(--muted); font-size: 12px; }
+    iframe { width: 1280px; height: 900px; border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; max-width: 100%; }
+  </style>
+</head>
+<body>
+  <h1>🧪 Interface tests</h1>
+  <p>Opens the real app in the frame below and clicks through menus, practice modes and tools. Run it over a local web server (for example <code>npx serve</code>); browsers block access to a <code>file://</code> frame.</p>
+  <div class="sum" id="sum">Running…</div>
+  <div id="out"></div>
+  <iframe id="app" title="App under test"></iframe>
+  <script>
+  (async function () {
+    'use strict';
+    const frame = document.getElementById('app'), out = document.getElementById('out');
+    let pass = 0, fail = 0;
+    const row = (ok, label, detail) => {
+      ok ? pass++ : fail++;
+      const d = document.createElement('div');
+      d.className = 'row ' + (ok ? 'ok' : 'bad');
+      d.textContent = (ok ? '✔ ' : '✘ ') + label;
+      out.appendChild(d);
+      if (!ok && detail) { const p = document.createElement('pre'); p.textContent = detail; out.appendChild(p); }
+    };
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const SPEED_WAIT = 60000; // long enough for playback to reach the first commit at the slowest speed (virtual time)
+    const load = params => new Promise(resolve => { frame.onload = () => setTimeout(resolve, 900); frame.src = 'index.html?' + params; });
+    const D = () => frame.contentDocument;
+    const $ = id => D().getElementById(id);
+    const q = sel => D().querySelector(sel);
+    const click = el => { if (typeof el === 'string') el = $(el) || q(el); el.click(); };
+    const key = k => D().dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true }));
+    const check = async (label, fn) => {
+      try { const r = await fn(); row(r === true || r === undefined, label, r === true || r === undefined ? null : String(r)); }
+      catch (e) { row(false, label, e && e.stack || String(e)); }
+    };
+    const seek = step => { const s = $('scrub'); s.value = step - 1; s.dispatchEvent(new Event('input', { bubbles: true })); };
+
+    // keep the first-visit tour and picker out of the way, but start from a clean slate
+    try { frame.contentWindow.localStorage.clear(); } catch (e) { /* not loaded yet */ }
+
+    await load('level=85&theme=dark');
+    await check('app starts and builds a trace', () => /^Step 1 \/ \d+/.test($('stepCount').textContent) || $('stepCount').textContent);
+    await check('stepping forward moves to step 2', () => { click('btnNext'); return /^Step 2 \//.test($('stepCount').textContent) || $('stepCount').textContent; });
+    await check('timeline click jumps to a later step', () => {
+      const cv = $('timeline'), r = cv.getBoundingClientRect();
+      cv.dispatchEvent(new MouseEvent('click', { clientX: r.left + r.width * 0.8, clientY: r.top + 5, bubbles: true }));
+      const n = +/Step (\d+)/.exec($('stepCount').textContent)[1];
+      return n > 10 || $('stepCount').textContent;
+    });
+    await check('View menu presets: Minimal hides the evaluation box', () => {
+      click('btnView');
+      if ($('viewMenu').classList.contains('hidden')) return 'menu did not open';
+      click(q('[data-preset="minimal"]'));
+      return $('viewName').textContent === 'Minimal' || $('viewName').textContent;
+    });
+    await check('View menu presets: Full detail', () => { click(q('[data-preset="full"]')); return $('viewName').textContent === 'Full detail' || $('viewName').textContent; });
+    await check('keyboard shortcut X toggles expression evaluation (Custom view)', () => { click('btnView'); key('x'); return $('viewName').textContent === 'Custom' || $('viewName').textContent; });
+    await check('shortcut list opens with ?', () => { key('?'); return !$('keysModal').classList.contains('hidden'); });
+    key('Escape');
+
+    await load('interview=bubblesort&theme=dark');
+    await check('interview question loads', () => /Bubble sort/.test($('levelTitle').textContent) || $('levelTitle').textContent);
+    await check('array view shows bars, pointers and a written cell', () => { seek(22); return (!!q('.arrview.bars .ac.wr') && !!q('.arrview .ap')) || 'no highlighted write / pointer'; });
+    await check('evaluation tree is shown for the current line', () => {
+      click('btnView'); click(q('[data-preset="beginner"]')); seek(22);
+      return (!$('evalbox').classList.contains('hidden') && !!q('.et-tree li')) || 'evaluation box hidden';
+    });
+    await check('conditions show ✓ true / ✗ false inline', () => !!Array.from(D().querySelectorAll('.inl')).find(x => /^[✓✗]/.test(x.textContent)) || 'no condition badge');
+
+    await load('interview=fibonacci&theme=dark');
+    await check('call tree appears for recursion', () => { seek(60); return (!!q('.calltree svg') && !!q('.ct-n.cur')) || 'no call tree'; });
+
+    await load('interview=interleave&theme=dark');
+    await check('predict mode: a correct prediction is accepted', () => {
+      click('btnLesson');
+      $('ivGuess').value = '1\n3\n2\n4';
+      click('ivCheck');
+      return !!q('.iv-verdict.ok') || ($('ivResult').textContent || 'no verdict');
+    });
+    await check('predict mode: a wrong prediction shows a line-by-line diff', () => {
+      $('ivGuess').value = '1\n2\n3\n4';
+      click('ivCheck');
+      return (!!q('.iv-verdict.bad') && D().querySelectorAll('.iv-diff tr.bad').length === 2) || 'diff not shown';
+    });
+    key('Escape');
+
+    await load('interview=debounce&theme=dark');
+    await check('write it yourself: starter has empty function bodies', async () => {
+      click('btnLesson');
+      click('ivWrite');
+      await sleep(300);
+      const code = frame.contentWindow.document.querySelector('.CodeMirror') ? frame.contentWindow.document.querySelector('.CodeMirror').CodeMirror.getValue() : $('editor').value;
+      return (D().body.classList.contains('challenge-mode') && /your code here/.test(code)) || 'not in write-it mode';
+    });
+    await check('write it yourself: the empty starter fails with a mistake hint', () => {
+      click('btnCheck');
+      return (!!q('.tres.bad') && !!q('.tres.tips')) || 'no failure / tips';
+    });
+    await check('write it yourself: the reference solution passes', async () => {
+      click('btnSolution');
+      click('useSolution');
+      await sleep(200);
+      click('btnCheck');
+      return !!q('.tres.win') || $('taskResults').textContent;
+    });
+
+    await load('level=85&theme=dark&interview=list');
+    await check('interview menu: search filters the list', async () => {
+      await sleep(400);
+      const s = $('ivSearch');
+      s.value = 'debounce';
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+      const items = D().querySelectorAll('.iv-item');
+      return (items.length >= 1 && items.length < 10) || `got ${items.length} items`;
+    });
+    await check('mock interview starts and ends with a scorecard', async () => {
+      click('ivMock');
+      await sleep(600);
+      if ($('mockBar').classList.contains('hidden')) return 'mock bar not shown';
+      key('Escape');
+      click('mbEnd');
+      return /Mock interview result/.test($('briefTitle').textContent) || $('briefTitle').textContent;
+    });
+    key('Escape');
+    // ---- guided course: one unit from start to finish
+    await check('one panel at a time: stepping switches between Call Stack, Heap, Web APIs and React', async () => {
+      const w = frame.contentWindow;
+      const seen = {};
+      for (const id of ['references', 'eventloop', 'r-state']) {
+        w.JSLabAPI.openLesson(id);
+        await sleep(700);
+        const tr = w.JSLabGo.trace();
+        const order = [];
+        for (let k = 0; k < tr.length; k++) {
+          w.JSLabGo(k);
+          const p = D().body.dataset.panel;
+          if (order[order.length - 1] !== p) order.push(p);
+          seen[p] = true;
+        }
+        seen[id] = order.join(' → ').slice(0, 120);
+      }
+      w.JSLabAPI.closeModals();
+      return (seen.stack && seen.heap && seen.web && seen.react) || JSON.stringify(seen);
+    });
+    await load('level=1&theme=dark');
+    await check('concepts: one header button opens a straight list of every React concept', async () => {
+      const w = frame.contentWindow, RC = w.ReactConcepts;
+      if (!$('btnCourse') || !/React concepts/.test($('btnCourse').textContent)) return 'no header button';
+      click('btnCourse');
+      await sleep(200);
+      const m = $('conceptList');
+      if (!m || m.classList.contains('hidden')) return 'list not shown';
+      const items = D().querySelectorAll('#conceptList .cl-item').length;
+      const all = w.REACT_LEVELS.every(l => RC.ORDER.includes(l.id));
+      return (items === RC.ORDER.length && items === w.REACT_LEVELS.length && all) || `items ${items}, order ${RC.ORDER.length}, lessons ${w.REACT_LEVELS.length}, all ${all}`;
+    });
+    await check('concepts: clicking one runs its code straight away (no lesson window, no steps to tick)', async () => {
+      const w = frame.contentWindow, RC = w.ReactConcepts;
+      click(D().querySelectorAll('#conceptList .cl-item')[3]);
+      await sleep(700);
+      const openModal = [...D().querySelectorAll('.modal')].some(x => !x.classList.contains('hidden'));
+      return (w.JSLabAPI.currentLessonId() === RC.ORDER[3] && !openModal && w.JSLabGo.trace().length > 5 && /Concept 4 \//.test($('coach').textContent) && !!$('coach').closest('.phasebar')) || `lesson ${w.JSLabAPI.currentLessonId()}, modal ${openModal}, pill ${$('coach') && $('coach').textContent}`;
+    });
+    await check('concepts: ◀ / ▶ in the pill go to the previous and next concept', async () => {
+      const w = frame.contentWindow, RC = w.ReactConcepts;
+      click('cNext');
+      await sleep(600);
+      const a = w.JSLabAPI.currentLessonId();
+      click('cPrev');
+      await sleep(600);
+      const b = w.JSLabAPI.currentLessonId();
+      return (a === RC.ORDER[4] && b === RC.ORDER[3]) || `${a} / ${b}`;
+    });
+    await check('Inside view is simple by default; "More detail" shows the rest', async () => {
+      const w = frame.contentWindow;
+      w.localStorage.removeItem('rql.insideMore');
+      w.JSLabAPI.openLesson('r-state');
+      await sleep(700);
+      const tr = w.JSLabGo.trace();
+      w.JSLabGo(tr.findIndex(t => t.reactDetail && t.reactDetail.trace === 'beginWork' && t.reactDetail.reason === 'state'));
+      click(q('#reactPanel [data-rtab="inside"]'));
+      const vis = sel => { const el = q('#reactBody ' + sel); return !!el && getComputedStyle(el).display !== 'none'; };
+      const simple = vis('.in-cap') && !vis('.lc-box') && !vis('.in-src') && !vis('.pipe');
+      click(q('#reactBody [data-inmore]'));
+      const more = vis('.lc-box') && vis('.in-src') && vis('.pipe');
+      click(q('#reactBody [data-inmore]'));
+      return (simple && more) || `simple ${simple}, more ${more}`;
+    });
+    await check('React mock interview: 6 React-only questions', async () => {
+      click('ivMockReact');
+      await sleep(600);
+      const bar = $('mockBar').textContent;
+      key('Escape');
+      click('mbEnd');
+      return (/React mock interview/.test(bar) && /Question 1 \/ 6/.test(bar)) || bar;
+    });
+    key('Escape');
+
+    await load('level=85&theme=dark');
+    await check('compare runs both versions', () => {
+      click('btnCompare');
+      $('cmpB').value = $('cmpA').value.replace('printSquare(4)', 'printSquare(5)');
+      click('cmpRun');
+      return (!!q('#cmpOut .cmp-table tr.diff')) || $('cmpOut').textContent;
+    });
+    key('Escape');
+    await check('Big-O lab measures a preset (linear search → O(n))', () => {
+      click('btnLab');
+      click('labRun');
+      return /O\(n\)/.test($('labTable').textContent) || $('labTable').textContent || $('labNote').textContent;
+    });
+    key('Escape');
+    await check('export progress creates a download', () => {
+      const w = frame.contentWindow;
+      let made = false;
+      const orig = w.URL.createObjectURL;
+      w.URL.createObjectURL = () => { made = true; return 'blob:test'; };
+      click('btnProgress');
+      click('btnExport');
+      w.URL.createObjectURL = orig;
+      return made || 'no file was created';
+    });
+    key('Escape');
+
+
+    // ---- React panel (level 4 is "useState and re-rendering")
+    await load('level=4&theme=dark');
+    const reactStep = re => frame.contentWindow.JSLabGo.trace().findIndex(t => t.kind === 'react' && re.test(t.msg));
+    await check('React panel appears with the fiber tree during a render', () => {
+      const n = reactStep(/beginWork<\/code> → <code>Counter/);
+      if (n < 0) return 'no beginWork step for Counter';
+      frame.contentWindow.JSLabGo(n);
+      if ($('reactPanel').classList.contains('hidden')) return 'panel hidden';
+      click(q('#reactPanel [data-rtab="fibers"]'));
+      const now = q('#reactBody .fb.now');
+      return (!!now && /Counter/.test(now.textContent) && /REACT RENDER PHASE/.test($('phaseBanner').textContent)) || $('reactBody').textContent.slice(0, 200) + ' / ' + $('phaseBanner').textContent;
+    });
+    await check('React stack frames are folded into one block', () => !!q('#stack .react-frame') && !q('#stack .ctx-name') || !/performUnitOfWork/.test([...D().querySelectorAll('#stack .ctx:not(.react-frame) .ctx-name')].map(e => e.textContent).join()) || 'React frames shown one by one');
+    await check('Inside view: pipeline, diagram, interview line, and jumping between React steps', async () => {
+      const w = frame.contentWindow;
+      const tr = w.JSLabGo.trace();
+      const k = tr.findIndex(t => t.kind === 'react' && /processes its queue/.test(t.msg));
+      if (k < 0) return 'no queue step';
+      w.JSLabGo(k);
+      click(q('#reactPanel [data-rtab="inside"]'));
+      const okQueue = !!q('#reactBody .pipe-st.now') && !!q('#reactBody .qs-row') && /In one sentence/i.test($('reactBody').textContent);
+      const before = +/Step (\d+)/.exec($('stepCount').textContent)[1];
+      click(q('#reactBody [data-rjump="1"]'));
+      const after = +/Step (\d+)/.exec($('stepCount').textContent)[1];
+      const landedOnReact = tr[after - 1].kind === 'react';
+      return (okQueue && after > before && landedOnReact) || `queue ${okQueue}, ${before} → ${after}, react ${landedOnReact}`;
+    });
+    await check('Inside view: lane check as bits and links to the real React source', () => {
+      const w = frame.contentWindow, tr = w.JSLabGo.trace();
+      const k = tr.findIndex(t => t.reactDetail && t.reactDetail.trace === 'beginWork' && t.reactDetail.reason === 'state');
+      if (k < 0) return 'no beginWork step for a state update';
+      w.JSLabGo(k);
+      const bits = D().querySelectorAll('#reactBody .lc-box .lb-row').length;
+      const lit = D().querySelectorAll('#reactBody .lc-box .lb-bit.on').length;
+      const links = [...D().querySelectorAll('#reactBody .in-src a')].map(a => a.textContent);
+      return (bits === 3 && lit >= 2 && links.some(t => /beginWork\(\)/.test(t)) && D().querySelector('#reactBody .in-src a').href.includes('github.com')) || `rows ${bits}, lit ${lit}, links ${links}`;
+    });
+    await check('what changed: a step reports useState 1 → 2, the commit outlines the DOM node, the timeline has phase bands', async () => {
+      const w = frame.contentWindow, tr = w.JSLabGo.trace();
+      const found = tr.some((s, k) => k > 0 && s.react && w.ReactInside.changesOf(s, tr[k - 1]).some(x => /useState/.test(x) && /<s>1<\/s>/.test(x) && /<code>2<\/code>/.test(x)));
+      const k = tr.findIndex(s => s.reactDetail && s.reactDetail.trace === 'commitText');
+      const hit = k >= 0 && /data-react-hit="text"/.test(tr[k].page.html);
+      w.JSLabGo(k);
+      const bands = $('timeline').classList.contains('has-phases');
+      return (found && hit && bands) || `changed ${found}, outlined ${hit}, bands ${bands}`;
+    });
+    await check('component code is marked while React renders it; narration is short with "more"; Stop at React pauses at a commit', async () => {
+      const w = frame.contentWindow, tr = w.JSLabGo.trace();
+      const k = tr.findIndex(s => s.reactDetail && s.reactDetail.trace === 'beginWork' && s.reactDetail.comp);
+      if (k < 0) return 'no beginWork step with component lines';
+      w.JSLabGo(k);
+      const marked = D().querySelectorAll('#codeView .ln.comp-render').length;
+      const tag = q('#codeView .comp-tag');
+      const long = tr.findIndex(s => s.msg && s.msg.replace(/<[^>]+>/g, '').length > 220);
+      w.JSLabGo(long);
+      const more = !!q('#narration [data-narmore]') && getComputedStyle(q('#narration .nar-rest')).display === 'none';
+      // Stop at React: commit
+      while ($('btnReactStop').textContent.indexOf('commit') < 0) click('btnReactStop');
+      w.JSLabGo(0);
+      click('btnPlay');
+      await sleep(SPEED_WAIT);
+      const at = w.JSLabGo.trace()[+/Step (\d+)/.exec($('stepCount').textContent)[1] - 1];
+      while ($('btnReactStop').textContent.indexOf('off') < 0) click('btnReactStop');
+      const paused = $('btnPlay').textContent === '▶' && at.reactDetail && at.reactDetail.trace === 'commitStart';
+      return (marked >= 3 && tag && /React renders/.test(tag.textContent) && more && paused) || `lines ${marked}, tag ${tag && tag.textContent}, more ${more}, paused at ${at && at.reactDetail && at.reactDetail.trace}`;
+    });
+    await check('React in one picture is the first concept; "⚖️ Compare" runs a ready-made pair side by side', async () => {
+      const w = frame.contentWindow, RC = w.ReactConcepts;
+      const first = RC.ORDER[0] === 'r-overview';
+      w.JSLabAPI.openLesson('r-indexkeys');
+      await sleep(700);
+      if ($('btnPair').classList.contains('hidden')) return 'no Compare button on r-indexkeys';
+      click('btnPair');
+      await sleep(400);
+      const open = !$('compareModal').classList.contains('hidden');
+      const labels = /index/.test($('cmpNameA').textContent) && /name/.test($('cmpNameB').textContent);
+      const react = !!q('#cmpOut .cmp-react') && D().querySelectorAll('#cmpOut .cmp-table tr.diff').length > 0 && !!q('#cmpOut .cmp-why');
+      key('Escape'); click(q('#compareModal [data-close]'));
+      w.JSLabAPI.openLesson(w.REACT_LEVELS[3].id); // back to the lesson the next tests use (level=4)
+      await sleep(700);
+      const hiddenElsewhere = $('btnPair').classList.contains('hidden');
+      return (first && open && labels && react && hiddenElsewhere) || `first ${first}, open ${open}, labels ${labels}, react ${react}, hidden elsewhere ${hiddenElsewhere}`;
+    });
+    await check('React practice: every code question and build challenge in one list; a predict task opens the answer box', async () => {
+      const w = frame.contentWindow, P = w.ReactPractice, list = P.list();
+      const want = w.REACT_IV.filter(q => q.kind !== 'theory' && q.code).length + w.REACT_CHALLENGES.length;
+      if (list.length !== want) return `list ${list.length}, expected ${want}`;
+      const k = list.findIndex(t => t.kind === 'predict');
+      P.open(k);
+      await sleep(1200);
+      const box = !!$('ivGuess') && !$('briefModal').classList.contains('hidden');
+      const pill = /Task 1 \//.test(($('practicePill') || {}).textContent || '') || /Task \d+ \//.test(($('practicePill') || {}).textContent || '');
+      w.JSLabAPI.closeModals();
+      const c = list.findIndex(t => t.kind === 'build');
+      P.open(c);
+      await sleep(900);
+      const building = D().body.classList.contains('challenge-mode');
+      w.JSLabAPI.openLesson(w.REACT_LEVELS[3].id); // back to the lesson the next tests use
+      await sleep(700);
+      return (box && pill && building) || `answer box ${box}, pill ${pill}, challenge ${building}`;
+    });
+    await check('Hooks tab shows the linked list', () => {
+      frame.contentWindow.JSLabGo(reactStep(/returned its JSX/));
+      click(q('#reactPanel [data-rtab="hooks"]'));
+      return (/useState/.test($('reactBody').textContent) && /useState/.test(q("#reactBody .rl-hook").textContent) && /null/.test(q("#reactBody .rl-list").textContent)) || $('reactBody').textContent.slice(0, 200);
+    });
+    await check('Log tab lists React steps and jumps when clicked', () => {
+      click(q('#reactPanel [data-rtab="log"]'));
+      const rows = D().querySelectorAll('#reactBody .rl-log');
+      if (rows.length < 3) return 'only ' + rows.length + ' log rows';
+      click(rows[0]);
+      return /^Step 1 \//.test($('stepCount').textContent) === false && +/Step (\d+)/.exec($('stepCount').textContent)[1] === +rows[0].dataset.step + 1 || $('stepCount').textContent;
+    });
+    click(q('#reactPanel [data-rtab="fibers"]'));
+    await check('commit step shows the commit stage and update flags', () => {
+      const n = reactStep(/<b>Update<\/b>: the text/);
+      if (n < 0) return 'no text update step';
+      frame.contentWindow.JSLabGo(n);
+      return (/COMMIT/i.test(q('#rlStages .rl-stage.on').textContent)) || q('#rlStages').textContent;
+    });
+    await check('"Inside React" view re-records with React\'s own lines', async () => {
+      const before = frame.contentWindow.JSLabGo.trace().length;
+      key('k');
+      await sleep(1500);
+      const after = frame.contentWindow.JSLabGo.trace().length;
+      key('k');
+      await sleep(800);
+      return after > before * 2 || `${before} → ${after}`;
+    });
+    await check('📚 Guides opens the React path: cheat sheet, interview day and the six system designs', async () => {
+      const w = frame.contentWindow;
+      if (!$('btnGuides')) return 'no Guides button';
+      click('btnGuides'); await sleep(150);
+      if ($('roadmapModal').classList.contains('hidden')) return 'the React path did not open';
+      click(q('#roadmapModal [data-rmtab="design"]')); await sleep(80);
+      const designs = D().querySelectorAll('#roadmapBody details.rm-design').length;
+      const first = q('#roadmapBody details.rm-design');
+      first.open = true; await sleep(30);
+      const content = /useInfiniteQuery/.test(first.textContent) && /State: where each piece lives/.test(first.textContent);
+      click(q('#roadmapModal [data-rmtab="interview"]')); await sleep(50);
+      const interview = /Must-know questions/.test(q('#roadmapBody').textContent);
+      $('roadmapModal').classList.add('hidden');
+      return (designs === 6 && content && interview && w.ReactRoadmap.DESIGNS.length === 6) || `designs ${designs}, content ${content}, interview tab ${interview}`;
+    });
+    await load('level=85&tour&theme=dark');
+    await check('guided tour opens, advances and closes', async () => {
+      await sleep(600);
+      if ($('tour').classList.contains('hidden')) return 'tour not shown';
+      click('tourNext');
+      if (!/2 \/ /.test(q('.tour-count').textContent)) return 'did not advance';
+      key('Escape');
+      return $('tour').classList.contains('hidden') || 'did not close';
+    });
+
+    await load('level=85&theme=light');
+    await check('light theme applies', () => D().documentElement.dataset.theme === 'light' || D().documentElement.dataset.theme);
+
+    document.getElementById('sum').innerHTML = `<span class="${fail ? 'bad' : 'ok'}">${fail ? '✘' : '✔'} ${pass} passed, ${fail} failed</span>`;
+    document.title = (fail ? 'FAIL ' : 'PASS ') + document.title;
+  })();
+  </script>
+</body>
+</html>
